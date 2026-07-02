@@ -16,7 +16,14 @@ secrets.properties
 .env
 .env.*
 
+/core/protocol/build/
 # Private local agent and protocol compatibility material
 /AGENTS.md
+/.agents/
+/skills-lock.json
 /.private/
 /app/src/privateProtocolTest/
+/core/protocol/src/testPrivateProtocol/
+/core/protocol/src/androidTestPrivateProtocol/
+/.kotlin/
+*.hprof
