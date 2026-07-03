@@ -6,6 +6,7 @@ data class LocalClipboardItem(
     val createdAtEpochMillis: Long,
     val captureSource: CaptureSource,
     val isBookmarked: Boolean,
+    val cloudSyncState: String = "local",
 )
 
 enum class CaptureSource { SHARE, FOCUSED_IMPORT, COMPOSER, CLOUD }

@@ -19,6 +19,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -50,6 +53,7 @@ fun LocalUtilityScreen(viewModel: LocalClipboardViewModel, syncViewModel: SyncVi
     var pendingDelete by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmRecoveryReset by remember { mutableStateOf(false) }
+    var section by remember { mutableStateOf(HistorySection.SHARED) }
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.dismissMessage() }
@@ -75,13 +79,20 @@ fun LocalUtilityScreen(viewModel: LocalClipboardViewModel, syncViewModel: SyncVi
                     { confirmRecoveryReset = true },
                 )
                 LocalRecoveryState.Ready -> {
-                    CapturePanel(state.composerText, viewModel)
+                    SectionSelector(section) { section = it }
+                    CapturePanel(state.composerText, section, viewModel, syncViewModel)
+                    val visibleItems = state.items.filter { item ->
+                        when (section) {
+                            HistorySection.SHARED -> item.cloudSyncState != "local"
+                            HistorySection.LOCAL -> item.cloudSyncState == "local"
+                        }
+                    }
                     HistoryControls(
                         query = state.query,
                         bookmarksOnly = state.bookmarksOnly,
                         sensitiveCopy = state.settings.markCopiedTextSensitive,
                         retention = state.settings.retentionPeriod,
-                        itemCount = state.items.size,
+                        itemCount = visibleItems.size,
                         onQuery = viewModel::setQuery,
                         onBookmarksOnly = viewModel::setBookmarksOnly,
                         onSensitiveCopy = viewModel::setSensitiveCopy,
@@ -92,7 +103,7 @@ fun LocalUtilityScreen(viewModel: LocalClipboardViewModel, syncViewModel: SyncVi
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(state.items, key = LocalClipboardItem::id) { item ->
+                        items(visibleItems, key = LocalClipboardItem::id) { item ->
                             HistoryItem(
                                 item = item,
                                 onCopy = { viewModel.copy(item) },
@@ -100,10 +111,14 @@ fun LocalUtilityScreen(viewModel: LocalClipboardViewModel, syncViewModel: SyncVi
                                 onDelete = { pendingDelete = item.id },
                             )
                         }
-                        if (state.items.isEmpty()) {
+                        if (visibleItems.isEmpty()) {
                             item {
                                 Text(
-                                    "No clipboard history yet.",
+                                    if (section == HistorySection.SHARED) {
+                                        "No shared clips yet. Send text above or sync another device."
+                                    } else {
+                                        "No local-only clips."
+                                    },
                                     modifier = Modifier.padding(vertical = 24.dp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -209,9 +224,18 @@ private fun SyncPanel(viewModel: SyncViewModel) {
 }
 
 @Composable
-private fun CapturePanel(text: String, viewModel: LocalClipboardViewModel) {
+private fun CapturePanel(
+    text: String,
+    section: HistorySection,
+    viewModel: LocalClipboardViewModel,
+    syncViewModel: SyncViewModel,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("New clip", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (section == HistorySection.SHARED) "Send text" else "Save locally",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
         OutlinedTextField(
             value = text,
             onValueChange = viewModel::setComposerText,
@@ -221,8 +245,35 @@ private fun CapturePanel(text: String, viewModel: LocalClipboardViewModel) {
             maxLines = 4,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::captureComposer, modifier = Modifier.weight(1f)) { Text("Save") }
-            FilledTonalButton(onClick = viewModel::importFocusedClipboard, modifier = Modifier.weight(1f)) { Text("Import clipboard") }
+            Button(
+                onClick = {
+                    if (section == HistorySection.SHARED) viewModel.captureComposer(syncViewModel::synchronize)
+                    else viewModel.captureComposer()
+                },
+                modifier = Modifier.weight(1f),
+            ) { Text(if (section == HistorySection.SHARED) "Send to devices" else "Save locally") }
+            FilledTonalButton(
+                onClick = {
+                    if (section == HistorySection.SHARED) viewModel.importFocusedClipboard(syncViewModel::synchronize)
+                    else viewModel.importFocusedClipboard()
+                },
+                modifier = Modifier.weight(1f),
+            ) { Text(if (section == HistorySection.SHARED) "Import & send" else "Import locally") }
+        }
+    }
+}
+
+@Composable
+private fun SectionSelector(selected: HistorySection, onSelected: (HistorySection) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        HistorySection.entries.forEachIndexed { index, section ->
+            SegmentedButton(
+                selected = selected == section,
+                onClick = { onSelected(section) },
+                shape = SegmentedButtonDefaults.itemShape(index, HistorySection.entries.size),
+            ) {
+                Text(if (section == HistorySection.SHARED) "Shared" else "Local")
+            }
         }
     }
 }
@@ -270,7 +321,13 @@ private fun HistoryItem(item: LocalClipboardItem, onCopy: () -> Unit, onBookmark
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    if (item.captureSource == CaptureSource.CLOUD) "Cloud" else "This device",
+                    when {
+                        item.captureSource == CaptureSource.CLOUD -> "From cloud"
+                        item.cloudSyncState == "synced" -> "Shared from this device"
+                        item.cloudSyncState == "queued" -> "Waiting to upload"
+                        item.cloudSyncState == "failed" -> "Upload needs attention"
+                        else -> "Local only"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -285,6 +342,8 @@ private fun HistoryItem(item: LocalClipboardItem, onCopy: () -> Unit, onBookmark
         }
     }
 }
+
+private enum class HistorySection { SHARED, LOCAL }
 
 @Composable
 private fun RecoveryPanel(message: String, action: String, onClick: () -> Unit) {

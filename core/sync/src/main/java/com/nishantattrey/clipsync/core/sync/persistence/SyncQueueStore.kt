@@ -33,8 +33,19 @@ class SyncQueueStore(private val database: ClipSyncDatabase) : DurableSyncStore 
         return inserted
     }
     override suspend fun dueOutbound(now: Long, limit: Int) = dao.loadDueOutbound(now, limit.coerceIn(1, 100))
-    override suspend fun markOutbound(entity: OutboundTextEntity, state: String, nextAttemptAt: Long, failure: String?) =
-        dao.updateOutbound(entity.itemId, state, entity.attemptCount + 1, nextAttemptAt, failure)
+    override suspend fun markOutbound(
+        entity: OutboundTextEntity,
+        state: String,
+        nextAttemptAt: Long,
+        failure: String?,
+    ): Int = database.withTransaction {
+        val updated = dao.updateOutbound(entity.itemId, state, entity.attemptCount + 1, nextAttemptAt, failure)
+        when (state) {
+            "synced" -> database.localClipboardDao().setCloudSyncState(entity.itemId, "synced")
+            "failed" -> database.localClipboardDao().setCloudSyncState(entity.itemId, "failed")
+        }
+        updated
+    }
 
     override suspend fun journalPage(rows: List<Pair<ClipboardItemRecord, Long>>) {
         database.withTransaction {

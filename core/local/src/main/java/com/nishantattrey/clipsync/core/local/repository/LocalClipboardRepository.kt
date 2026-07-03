@@ -220,6 +220,7 @@ class RoomLocalClipboardRepository(
                     createdAtEpochMillis = entity.createdAtEpochMillis,
                     captureSource = CaptureSource.valueOf(entity.captureSource),
                     isBookmarked = entity.isBookmarked,
+                    cloudSyncState = entity.cloudSyncState,
                 ),
             )
         } finally {

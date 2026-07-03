@@ -41,9 +41,11 @@ jobs:
           ./gradlew
           :core:protocol:test
           :core:local:testDebugUnitTest
+          :core:sync:testDebugUnitTest
           :app:testPrivateProtocolUnitTest
           :core:protocol:lintDebug
           :core:local:lintDebug
+          :core:sync:lintDebug
           :app:lintDebug
           :app:assembleDebug
           :app:assembleRelease

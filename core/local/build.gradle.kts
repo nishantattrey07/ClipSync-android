@@ -25,7 +25,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     sourceSets {
-        getByName("androidTest").assets.directories.add(file("$projectDir/schemas"))
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
     }
 }
 

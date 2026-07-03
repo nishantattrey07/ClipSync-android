@@ -70,10 +70,12 @@ class LocalClipboardViewModel @Inject constructor(
     fun setBookmarksOnly(value: Boolean) { mutableState.update { it.copy(bookmarksOnly = value) }; scheduleRefresh() }
     fun dismissMessage() = mutableState.update { it.copy(message = null) }
 
-    fun captureComposer() = viewModelScope.launch {
+    fun captureComposer(onStored: () -> Unit = {}) = viewModelScope.launch {
         try {
-            handle(capture(state.value.composerText, CaptureSource.COMPOSER), "Saved")
+            val result = capture(state.value.composerText, CaptureSource.COMPOSER)
+            handle(result, "Saved")
             mutableState.update { it.copy(composerText = "") }
+            if (result is LocalDataResult.Success) onStored()
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Text cannot be empty") }
         } catch (_: OversizedCaptureException) {
@@ -81,11 +83,14 @@ class LocalClipboardViewModel @Inject constructor(
         }
     }
 
-    fun importFocusedClipboard() = viewModelScope.launch {
+    fun importFocusedClipboard(onStored: () -> Unit = {}) = viewModelScope.launch {
         try {
             val result = importClipboard()
             if (result == null) mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
-            else handle(result, "Imported")
+            else {
+                handle(result, "Imported")
+                if (result is LocalDataResult.Success) onStored()
+            }
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Clipboard text is empty") }
         } catch (_: OversizedCaptureException) {
