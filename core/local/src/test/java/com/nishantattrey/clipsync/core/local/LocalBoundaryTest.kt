@@ -1,6 +1,7 @@
 package com.nishantattrey.clipsync.core.local
 
 import com.nishantattrey.clipsync.core.local.capture.ClipboardGateway
+import androidx.datastore.core.CorruptionException
 import com.nishantattrey.clipsync.core.local.capture.FocusedClipboardImportUseCase
 import com.nishantattrey.clipsync.core.local.capture.TextCaptureUseCase
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalBoundaryTest {
@@ -40,6 +42,16 @@ class LocalBoundaryTest {
         LocalSettingsSerializer.writeTo(expected, output)
 
         assertEquals(expected, LocalSettingsSerializer.readFrom(ByteArrayInputStream(output.toByteArray())))
+    }
+
+    @Test fun `malformed settings are classified as recoverable corruption`() = runTest {
+        var corruption: Throwable? = null
+        try {
+            LocalSettingsSerializer.readFrom(ByteArrayInputStream(byteArrayOf(0x0a, 0x05, 0x01)))
+        } catch (error: Throwable) {
+            corruption = error
+        }
+        assertTrue(corruption is CorruptionException)
     }
 }
 

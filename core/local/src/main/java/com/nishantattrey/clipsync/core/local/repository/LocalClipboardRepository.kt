@@ -62,8 +62,8 @@ class RoomLocalClipboardRepository(
         withContext(ioDispatcher) {
             if (text.isEmpty()) throw EmptyCaptureException()
             val bytes = text.toByteArray(StandardCharsets.UTF_8)
-            if (bytes.size > MAX_LOCAL_TEXT_UTF8_BYTES) throw OversizedCaptureException()
             try {
+                if (bytes.size > MAX_LOCAL_TEXT_UTF8_BYTES) throw OversizedCaptureException()
                 val digest = fingerprint.compute(bytes)
                 dao.findByFingerprint(digest)?.let { return@withContext LocalDataResult.Success(CaptureResult.Duplicate(it.id)) }
                 val id = ids.next()
@@ -89,6 +89,10 @@ class RoomLocalClipboardRepository(
                 LocalDataResult.RecoveryRequired(LocalRecoveryState.MissingKeys(setOf(error.purpose)))
             } catch (error: InvalidatedLocalKeyException) {
                 LocalDataResult.RecoveryRequired(LocalRecoveryState.InvalidatedKeys(setOf(error.purpose)))
+            } catch (error: GeneralSecurityException) {
+                LocalDataResult.RecoveryRequired(
+                    LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName),
+                )
             } finally {
                 bytes.fill(0)
             }
@@ -191,15 +195,26 @@ class RoomLocalClipboardRepository(
         LocalDataResult.CorruptItem(entity.id)
     } catch (error: IllegalArgumentException) {
         LocalDataResult.CorruptItem(entity.id)
+    } catch (error: GeneralSecurityException) {
+        LocalDataResult.RecoveryRequired(
+            LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName),
+        )
     }
+}
+
+interface LocalRecoveryManager {
+    suspend fun state(): LocalRecoveryState
+    suspend fun resetEncryptedHistory(confirmed: Boolean): LocalRecoveryState
 }
 
 class LocalRecoveryCoordinator(
     private val dao: LocalClipboardDao,
     private val keys: LocalKeyMaterial,
+    private val cipher: LocalPayloadCipher,
+    private val fingerprint: LocalFingerprint,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
-    suspend fun state(): LocalRecoveryState = withContext(ioDispatcher) {
+) : LocalRecoveryManager {
+    override suspend fun state(): LocalRecoveryState = withContext(ioDispatcher) {
         val hasRows = dao.count() > 0
         val missing = mutableSetOf<LocalKeyPurpose>()
         val invalidated = mutableSetOf<LocalKeyPurpose>()
@@ -216,6 +231,26 @@ class LocalRecoveryCoordinator(
                 return@withContext LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName)
             }
         }
+        if (missing.isEmpty() && invalidated.isEmpty()) {
+            try {
+                cipher.verifyUsable()
+            } catch (error: MissingLocalKeyException) {
+                missing += error.purpose
+            } catch (error: InvalidatedLocalKeyException) {
+                invalidated += error.purpose
+            } catch (error: GeneralSecurityException) {
+                return@withContext LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName)
+            }
+            try {
+                fingerprint.verifyUsable()
+            } catch (error: MissingLocalKeyException) {
+                missing += error.purpose
+            } catch (error: InvalidatedLocalKeyException) {
+                invalidated += error.purpose
+            } catch (error: GeneralSecurityException) {
+                return@withContext LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName)
+            }
+        }
         when {
             invalidated.isNotEmpty() -> LocalRecoveryState.InvalidatedKeys(invalidated)
             missing.isNotEmpty() -> LocalRecoveryState.MissingKeys(missing)
@@ -223,10 +258,15 @@ class LocalRecoveryCoordinator(
         }
     }
 
-    suspend fun resetEncryptedHistory(confirmed: Boolean) = withContext(ioDispatcher) {
+    override suspend fun resetEncryptedHistory(confirmed: Boolean): LocalRecoveryState = withContext(ioDispatcher) {
         require(confirmed) { "Explicit confirmation is required." }
+        val current = state()
+        require(current is LocalRecoveryState.MissingKeys || current is LocalRecoveryState.InvalidatedKeys) {
+            "Destructive reset is only allowed for missing or invalidated keys."
+        }
         dao.deleteAll()
         keys.deleteAll()
         LocalKeyPurpose.entries.forEach(keys::getOrCreate)
+        state()
     }
 }

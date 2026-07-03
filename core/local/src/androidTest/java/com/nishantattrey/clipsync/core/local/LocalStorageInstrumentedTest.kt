@@ -56,7 +56,7 @@ class LocalStorageInstrumentedTest {
         val exact = "  private\r\ntext  "
         var database = openDatabase()
         var repository = repository(database)
-        LocalRecoveryCoordinator(database.localClipboardDao(), AndroidKeystoreLocalKeyMaterial()).state()
+        recovery(database).state()
         repository.capture(exact, CaptureSource.SHARE)
         val row = database.localClipboardDao().loadPage(false, null, null, 1).single()
         assertFalse(String(row.encryptedPayload, Charsets.UTF_8).contains("private"))
@@ -72,11 +72,11 @@ class LocalStorageInstrumentedTest {
 
     @Test fun missingFingerprintKeyIsExplicitRecovery() = runBlocking {
         val database = openDatabase()
-        LocalRecoveryCoordinator(database.localClipboardDao(), AndroidKeystoreLocalKeyMaterial()).state()
+        recovery(database).state()
         repository(database).capture("stored", CaptureSource.COMPOSER)
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(LOCAL_FINGERPRINT_KEY_ALIAS)
 
-        val state = LocalRecoveryCoordinator(database.localClipboardDao(), AndroidKeystoreLocalKeyMaterial()).state()
+        val state = recovery(database).state()
         assertTrue(state is LocalRecoveryState.MissingKeys)
         assertTrue((state as LocalRecoveryState.MissingKeys).aliases.contains(LocalKeyPurpose.DEDUP_FINGERPRINT))
         database.close()
@@ -96,6 +96,16 @@ class LocalStorageInstrumentedTest {
         val keys = AndroidKeystoreLocalKeyMaterial()
         return RoomLocalClipboardRepository(
             database.localClipboardDao(),
+            AesGcmLocalPayloadCipher(keys),
+            HmacSha256LocalFingerprint(keys),
+        )
+    }
+
+    private fun recovery(database: ClipSyncDatabase): LocalRecoveryCoordinator {
+        val keys = AndroidKeystoreLocalKeyMaterial()
+        return LocalRecoveryCoordinator(
+            database.localClipboardDao(),
+            keys,
             AesGcmLocalPayloadCipher(keys),
             HmacSha256LocalFingerprint(keys),
         )

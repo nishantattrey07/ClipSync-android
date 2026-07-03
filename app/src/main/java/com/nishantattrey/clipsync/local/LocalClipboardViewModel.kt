@@ -14,10 +14,12 @@ import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.OversizedCaptureException
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
-import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryCoordinator
+import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,8 @@ data class LocalClipboardUiState(
     val settings: LocalSettings = LocalSettings(),
     val recovery: LocalRecoveryState = LocalRecoveryState.Ready,
     val message: String? = null,
+    val canLoadMore: Boolean = false,
+    val isLoadingMore: Boolean = false,
 )
 
 @HiltViewModel
@@ -42,10 +46,11 @@ class LocalClipboardViewModel @Inject constructor(
     private val importClipboard: FocusedClipboardImportUseCase,
     private val clipboard: ClipboardGateway,
     private val settingsRepository: LocalSettingsRepository,
-    private val recoveryCoordinator: LocalRecoveryCoordinator,
+    private val recoveryCoordinator: LocalRecoveryManager,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LocalClipboardUiState())
     val state: StateFlow<LocalClipboardUiState> = mutableState.asStateFlow()
+    private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -56,13 +61,13 @@ class LocalClipboardViewModel @Inject constructor(
         }
         viewModelScope.launch {
             mutableState.update { it.copy(recovery = recoveryCoordinator.state()) }
-            repository.changes.collectLatest { refresh() }
+            repository.changes.collectLatest { scheduleRefresh() }
         }
     }
 
     fun setComposerText(value: String) = mutableState.update { it.copy(composerText = value) }
-    fun setQuery(value: String) { mutableState.update { it.copy(query = value) }; refreshAsync() }
-    fun setBookmarksOnly(value: Boolean) { mutableState.update { it.copy(bookmarksOnly = value) }; refreshAsync() }
+    fun setQuery(value: String) { mutableState.update { it.copy(query = value) }; scheduleRefresh() }
+    fun setBookmarksOnly(value: Boolean) { mutableState.update { it.copy(bookmarksOnly = value) }; scheduleRefresh() }
     fun dismissMessage() = mutableState.update { it.copy(message = null) }
 
     fun captureComposer() = viewModelScope.launch {
@@ -101,8 +106,23 @@ class LocalClipboardViewModel @Inject constructor(
     fun clearUnbookmarkedConfirmed() = viewModelScope.launch { repository.clearUnbookmarked() }
 
     fun resetEncryptedHistoryConfirmed() = viewModelScope.launch {
-        recoveryCoordinator.resetEncryptedHistory(confirmed = true)
-        mutableState.update { it.copy(recovery = LocalRecoveryState.Ready, message = "Local history reset") }
+        try {
+            val recovery = recoveryCoordinator.resetEncryptedHistory(confirmed = true)
+            mutableState.update {
+                it.copy(
+                    recovery = recovery,
+                    message = if (recovery == LocalRecoveryState.Ready) "Local history reset" else null,
+                )
+            }
+        } catch (_: IllegalArgumentException) {
+            mutableState.update { it.copy(recovery = recoveryCoordinator.state()) }
+        }
+    }
+
+    fun retryRecovery() = viewModelScope.launch {
+        val recovery = recoveryCoordinator.state()
+        mutableState.update { it.copy(recovery = recovery) }
+        if (recovery == LocalRecoveryState.Ready) scheduleRefresh()
     }
 
     fun setSensitiveCopy(enabled: Boolean) = viewModelScope.launch {
@@ -114,18 +134,56 @@ class LocalClipboardViewModel @Inject constructor(
         repository.applyRetention(period)
     }
 
-    private fun refreshAsync() { viewModelScope.launch { refresh() } }
-    private suspend fun refresh() {
+    fun loadMore() {
         val snapshot = state.value
-        val result = if (snapshot.query.isEmpty()) {
-            repository.page(snapshot.bookmarksOnly)
-        } else {
-            repository.search(snapshot.query, snapshot.bookmarksOnly)
+        if (snapshot.query.isNotEmpty() || !snapshot.canLoadMore || snapshot.isLoadingMore) return
+        val before = snapshot.items.lastOrNull() ?: return
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            mutableState.update { it.copy(isLoadingMore = true) }
+            val result = repository.page(snapshot.bookmarksOnly, before)
+            if (state.value.query != snapshot.query || state.value.bookmarksOnly != snapshot.bookmarksOnly) return@launch
+            when (result) {
+                is LocalDataResult.Success -> mutableState.update {
+                    it.copy(
+                        items = it.items + result.value,
+                        canLoadMore = result.value.size == com.nishantattrey.clipsync.core.local.repository.MAX_PAGE_SIZE,
+                        isLoadingMore = false,
+                    )
+                }
+                is LocalDataResult.RecoveryRequired -> mutableState.update {
+                    it.copy(recovery = result.state, isLoadingMore = false)
+                }
+                is LocalDataResult.CorruptItem -> mutableState.update {
+                    it.copy(message = "A local item is corrupt", isLoadingMore = false)
+                }
+            }
         }
-        when (result) {
-            is LocalDataResult.Success -> mutableState.update { it.copy(items = result.value) }
-            is LocalDataResult.RecoveryRequired -> mutableState.update { it.copy(recovery = result.state) }
-            is LocalDataResult.CorruptItem -> mutableState.update { it.copy(message = "A local item is corrupt") }
+    }
+
+    private fun scheduleRefresh() {
+        refreshJob?.cancel()
+        val snapshot = state.value
+        refreshJob = viewModelScope.launch {
+            if (snapshot.query.isNotEmpty()) delay(150)
+            val result = if (snapshot.query.isEmpty()) {
+                repository.page(snapshot.bookmarksOnly)
+            } else {
+                repository.search(snapshot.query, snapshot.bookmarksOnly)
+            }
+            if (state.value.query != snapshot.query || state.value.bookmarksOnly != snapshot.bookmarksOnly) return@launch
+            when (result) {
+                is LocalDataResult.Success -> mutableState.update {
+                    it.copy(
+                        items = result.value,
+                        canLoadMore = snapshot.query.isEmpty() &&
+                            result.value.size == com.nishantattrey.clipsync.core.local.repository.MAX_PAGE_SIZE,
+                        isLoadingMore = false,
+                    )
+                }
+                is LocalDataResult.RecoveryRequired -> mutableState.update { it.copy(recovery = result.state) }
+                is LocalDataResult.CorruptItem -> mutableState.update { it.copy(message = "A local item is corrupt") }
+            }
         }
     }
 

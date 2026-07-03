@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 import java.security.GeneralSecurityException
 import java.security.InvalidKeyException
 import java.security.KeyStore
+import java.security.ProviderException
 import java.security.UnrecoverableKeyException
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
@@ -30,10 +31,12 @@ data class LocalEncryptionEnvelope(
 interface LocalPayloadCipher {
     fun encrypt(id: String, plaintext: ByteArray): ByteArray
     fun decrypt(id: String, envelope: ByteArray): ByteArray
+    fun verifyUsable()
 }
 
 interface LocalFingerprint {
     fun compute(plaintext: ByteArray): ByteArray
+    fun verifyUsable()
 }
 
 interface LocalKeyMaterial {
@@ -95,6 +98,8 @@ class AesGcmLocalPayloadCipher(private val keys: LocalKeyMaterial) : LocalPayloa
             throw InvalidatedLocalKeyException(LocalKeyPurpose.PAYLOAD_ENCRYPTION, error)
         } catch (error: InvalidKeyException) {
             throw InvalidatedLocalKeyException(LocalKeyPurpose.PAYLOAD_ENCRYPTION, error)
+        } catch (error: ProviderException) {
+            throw GeneralSecurityException(error)
         }
     }
 
@@ -114,6 +119,22 @@ class AesGcmLocalPayloadCipher(private val keys: LocalKeyMaterial) : LocalPayloa
             throw InvalidatedLocalKeyException(LocalKeyPurpose.PAYLOAD_ENCRYPTION, error)
         } catch (error: InvalidKeyException) {
             throw InvalidatedLocalKeyException(LocalKeyPurpose.PAYLOAD_ENCRYPTION, error)
+        } catch (error: ProviderException) {
+            throw GeneralSecurityException(error)
+        }
+    }
+
+    override fun verifyUsable() {
+        val encrypted = encrypt("00000000-0000-0000-0000-000000000000", ByteArray(0))
+        try {
+            val decrypted = decrypt("00000000-0000-0000-0000-000000000000", encrypted)
+            try {
+                if (decrypted.isNotEmpty()) throw GeneralSecurityException("Payload key probe failed.")
+            } finally {
+                decrypted.fill(0)
+            }
+        } finally {
+            encrypted.fill(0)
         }
     }
 
@@ -133,6 +154,12 @@ class HmacSha256LocalFingerprint(private val keys: LocalKeyMaterial) : LocalFing
         throw InvalidatedLocalKeyException(LocalKeyPurpose.DEDUP_FINGERPRINT, error)
     } catch (error: InvalidKeyException) {
         throw InvalidatedLocalKeyException(LocalKeyPurpose.DEDUP_FINGERPRINT, error)
+    } catch (error: ProviderException) {
+        throw GeneralSecurityException(error)
+    }
+
+    override fun verifyUsable() {
+        compute(ByteArray(0)).fill(0)
     }
 }
 
@@ -153,13 +180,27 @@ class AndroidKeystoreLocalKeyMaterial : LocalKeyMaterial {
     }
 
     override fun getOrCreate(purpose: LocalKeyPurpose): SecretKey = get(purpose) ?: when (purpose) {
-        LocalKeyPurpose.PAYLOAD_ENCRYPTION -> generateAes()
-        LocalKeyPurpose.DEDUP_FINGERPRINT -> generateHmac()
+        LocalKeyPurpose.PAYLOAD_ENCRYPTION -> generate(purpose, ::generateAes)
+        LocalKeyPurpose.DEDUP_FINGERPRINT -> generate(purpose, ::generateHmac)
     }
 
     override fun deleteAll() {
-        val store = keyStore
-        LocalKeyPurpose.entries.forEach { store.deleteEntry(alias(it)) }
+        try {
+            val store = keyStore
+            LocalKeyPurpose.entries.forEach { store.deleteEntry(alias(it)) }
+        } catch (error: ProviderException) {
+            throw GeneralSecurityException(error)
+        }
+    }
+
+    private fun generate(purpose: LocalKeyPurpose, block: () -> SecretKey): SecretKey = try {
+        block()
+    } catch (error: KeyPermanentlyInvalidatedException) {
+        throw InvalidatedLocalKeyException(purpose, error)
+    } catch (error: InvalidKeyException) {
+        throw InvalidatedLocalKeyException(purpose, error)
+    } catch (error: ProviderException) {
+        throw GeneralSecurityException(error)
     }
 
     private fun generateAes(): SecretKey = KeyGenerator.getInstance(

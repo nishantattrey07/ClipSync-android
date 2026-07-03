@@ -1,6 +1,7 @@
 package com.nishantattrey.clipsync.core.local.settings
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.Serializer
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
@@ -10,12 +11,17 @@ import com.nishantattrey.clipsync.core.local.proto.RetentionPeriodProto
 import com.nishantattrey.clipsync.core.local.proto.copy
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 object LocalSettingsSerializer : Serializer<LocalSettingsProto> {
     override val defaultValue: LocalSettingsProto = LocalSettingsProto.getDefaultInstance()
-    override suspend fun readFrom(input: InputStream): LocalSettingsProto = LocalSettingsProto.parseFrom(input)
+    override suspend fun readFrom(input: InputStream): LocalSettingsProto = try {
+        LocalSettingsProto.parseFrom(input)
+    } catch (error: IOException) {
+        throw CorruptionException("Local settings protobuf is malformed.", error)
+    }
     override suspend fun writeTo(t: LocalSettingsProto, output: OutputStream) = t.writeTo(output)
 }
 

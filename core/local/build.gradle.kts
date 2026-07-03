@@ -44,7 +44,6 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.protobuf.kotlin.lite)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.hilt.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

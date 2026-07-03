@@ -5,6 +5,9 @@ import com.nishantattrey.clipsync.core.local.crypto.HmacSha256LocalFingerprint
 import com.nishantattrey.clipsync.core.local.crypto.LocalEnvelopeCodec
 import com.nishantattrey.clipsync.core.local.crypto.LocalEncryptionEnvelope
 import com.nishantattrey.clipsync.core.local.crypto.LocalKeyMaterial
+import com.nishantattrey.clipsync.core.local.crypto.LocalFingerprint
+import com.nishantattrey.clipsync.core.local.crypto.LocalPayloadCipher
+import com.nishantattrey.clipsync.core.local.crypto.InvalidatedLocalKeyException
 import com.nishantattrey.clipsync.core.local.model.CaptureResult
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
 import com.nishantattrey.clipsync.core.local.model.EmptyCaptureException
@@ -15,6 +18,9 @@ import com.nishantattrey.clipsync.core.local.persistence.LocalClipboardEntity
 import com.nishantattrey.clipsync.core.local.repository.EpochMillisClock
 import com.nishantattrey.clipsync.core.local.repository.LocalIdGenerator
 import com.nishantattrey.clipsync.core.local.repository.RoomLocalClipboardRepository
+import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryCoordinator
+import java.security.GeneralSecurityException
+import java.security.InvalidKeyException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +105,41 @@ class LocalRepositoryTest {
     }
 
     @Test
+    fun `history pages expose all two hundred retained items`() = runTest {
+        val dao = FakeDao()
+        val counter = java.util.concurrent.atomic.AtomicInteger()
+        val repository = repository(dao, LocalIdGenerator { "%08d-0000-0000-0000-000000000000".format(counter.incrementAndGet()) })
+        repeat(200) { repository.capture("entry-$it", CaptureSource.COMPOSER) }
+
+        val first = (repository.page(false) as LocalDataResult.Success).value
+        val second = (repository.page(false, first.last()) as LocalDataResult.Success).value
+        assertEquals(100, first.size)
+        assertEquals(100, second.size)
+        assertEquals(200, (first + second).map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun `recovery probes classify unusable and temporary keys`() = runTest {
+        val invalidated = LocalRecoveryCoordinator(
+            FakeDao(),
+            FakeKeys(),
+            ProbeCipher(InvalidatedLocalKeyException(LocalKeyPurpose.PAYLOAD_ENCRYPTION, InvalidKeyException())),
+            ProbeFingerprint(),
+            Dispatchers.Unconfined,
+        ).state()
+        assertTrue(invalidated is com.nishantattrey.clipsync.core.local.model.LocalRecoveryState.InvalidatedKeys)
+
+        val temporary = LocalRecoveryCoordinator(
+            FakeDao(),
+            FakeKeys(),
+            ProbeCipher(),
+            ProbeFingerprint(GeneralSecurityException("temporarily unavailable")),
+            Dispatchers.Unconfined,
+        ).state()
+        assertTrue(temporary is com.nishantattrey.clipsync.core.local.model.LocalRecoveryState.TemporarilyUnavailable)
+    }
+
+    @Test
     fun `envelope rejects AAD row swapping`() {
         val cipher = AesGcmLocalPayloadCipher(FakeKeys())
         val encrypted = cipher.encrypt("one", "secret".toByteArray())
@@ -150,6 +191,17 @@ private class FakeKeys : LocalKeyMaterial {
     override fun get(purpose: LocalKeyPurpose): SecretKey? = values[purpose]
     override fun getOrCreate(purpose: LocalKeyPurpose): SecretKey = requireNotNull(values[purpose])
     override fun deleteAll() = Unit
+}
+
+private class ProbeCipher(private val failure: GeneralSecurityException? = null) : LocalPayloadCipher {
+    override fun encrypt(id: String, plaintext: ByteArray) = byteArrayOf()
+    override fun decrypt(id: String, envelope: ByteArray) = byteArrayOf()
+    override fun verifyUsable() { failure?.let { throw it } }
+}
+
+private class ProbeFingerprint(private val failure: GeneralSecurityException? = null) : LocalFingerprint {
+    override fun compute(plaintext: ByteArray) = ByteArray(32)
+    override fun verifyUsable() { failure?.let { throw it } }
 }
 
 private class FakeDao : LocalClipboardDao {

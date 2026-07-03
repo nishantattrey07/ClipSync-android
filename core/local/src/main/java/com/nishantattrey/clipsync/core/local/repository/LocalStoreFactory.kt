@@ -15,12 +15,14 @@ class LocalStore internal constructor(
 fun createLocalStore(context: Context): LocalStore {
     val database = Room.databaseBuilder(context, ClipSyncDatabase::class.java, "clipsync-local-v1.db").build()
     val keys = AndroidKeystoreLocalKeyMaterial()
+    val cipher = AesGcmLocalPayloadCipher(keys)
+    val fingerprint = HmacSha256LocalFingerprint(keys)
     return LocalStore(
         repository = RoomLocalClipboardRepository(
             database.localClipboardDao(),
-            AesGcmLocalPayloadCipher(keys),
-            HmacSha256LocalFingerprint(keys),
+            cipher,
+            fingerprint,
         ),
-        recovery = LocalRecoveryCoordinator(database.localClipboardDao(), keys),
+        recovery = LocalRecoveryCoordinator(database.localClipboardDao(), keys, cipher, fingerprint),
     )
 }

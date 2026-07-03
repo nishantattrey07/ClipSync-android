@@ -8,6 +8,7 @@ import com.nishantattrey.clipsync.core.local.capture.FocusedClipboardImportUseCa
 import com.nishantattrey.clipsync.core.local.capture.TextCaptureUseCase
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryCoordinator
+import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.repository.LocalStore
 import com.nishantattrey.clipsync.core.local.repository.createLocalStore
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
@@ -38,4 +39,5 @@ object LocalModule {
     @Provides fun importer(clipboard: ClipboardGateway, focus: ForegroundFocusState, capture: TextCaptureUseCase) =
         FocusedClipboardImportUseCase(clipboard, focus, capture)
     @Provides fun recovery(store: LocalStore): LocalRecoveryCoordinator = store.recovery
+    @Provides fun recoveryManager(recovery: LocalRecoveryCoordinator): LocalRecoveryManager = recovery
 }

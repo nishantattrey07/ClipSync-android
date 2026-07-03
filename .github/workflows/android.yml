@@ -40,8 +40,11 @@ jobs:
         run: >-
           ./gradlew
           :core:protocol:test
-          :app:testDebugUnitTest
-          lintDebug
+          :core:local:testDebugUnitTest
+          :app:testPrivateProtocolUnitTest
+          :core:protocol:lintDebug
+          :core:local:lintDebug
+          :app:lintDebug
           :app:assembleDebug
           :app:assembleRelease
           --configuration-cache
