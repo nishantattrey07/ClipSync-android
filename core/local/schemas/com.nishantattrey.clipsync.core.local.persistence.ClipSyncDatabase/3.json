@@ -1,0 +1,604 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "4ca1a407113b5b9ca5a2da227e419dd7",
+    "entities": [
+      {
+        "tableName": "local_clipboard_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `encrypted_payload` BLOB NOT NULL, `fingerprint` BLOB NOT NULL, `envelope_version` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `capture_source` TEXT NOT NULL, `plaintext_byte_count` INTEGER NOT NULL, `is_bookmarked` INTEGER NOT NULL, `cloud_sync_state` TEXT NOT NULL DEFAULT 'local', PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedPayload",
+            "columnName": "encrypted_payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "envelopeVersion",
+            "columnName": "envelope_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureSource",
+            "columnName": "capture_source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plaintextByteCount",
+            "columnName": "plaintext_byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBookmarked",
+            "columnName": "is_bookmarked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudSyncState",
+            "columnName": "cloud_sync_state",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'local'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_clipboard_items_fingerprint",
+            "unique": false,
+            "columnNames": [
+              "fingerprint"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_clipboard_items_fingerprint` ON `${TABLE_NAME}` (`fingerprint`)"
+          },
+          {
+            "name": "index_local_clipboard_items_created_at_epoch_millis_id",
+            "unique": false,
+            "columnNames": [
+              "created_at_epoch_millis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_clipboard_items_created_at_epoch_millis_id` ON `${TABLE_NAME}` (`created_at_epoch_millis`, `id`)"
+          },
+          {
+            "name": "index_local_clipboard_items_is_bookmarked_created_at_epoch_millis_id",
+            "unique": false,
+            "columnNames": [
+              "is_bookmarked",
+              "created_at_epoch_millis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_clipboard_items_is_bookmarked_created_at_epoch_millis_id` ON `${TABLE_NAME}` (`is_bookmarked`, `created_at_epoch_millis`, `id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "outbound_text_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`item_id` TEXT NOT NULL, `channel_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `ciphertext` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `state` TEXT NOT NULL, `attempt_count` INTEGER NOT NULL, `next_attempt_at_epoch_millis` INTEGER NOT NULL, `last_failure` TEXT, PRIMARY KEY(`item_id`))",
+        "fields": [
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ciphertext",
+            "columnName": "ciphertext",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadVersion",
+            "columnName": "payload_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAtEpochMillis",
+            "columnName": "next_attempt_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastFailure",
+            "columnName": "last_failure",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbound_text_queue_state_next_attempt_at_epoch_millis_created_at_epoch_millis_item_id",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "next_attempt_at_epoch_millis",
+              "created_at_epoch_millis",
+              "item_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbound_text_queue_state_next_attempt_at_epoch_millis_created_at_epoch_millis_item_id` ON `${TABLE_NAME}` (`state`, `next_attempt_at_epoch_millis`, `created_at_epoch_millis`, `item_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "inbound_text_journal",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`item_id` TEXT NOT NULL, `channel_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload_version` INTEGER NOT NULL, `ciphertext` TEXT, `image_path` TEXT, `thumbnail_ciphertext` TEXT, `mime_type` TEXT, `created_at` TEXT NOT NULL, `created_at_microseconds` INTEGER NOT NULL, `state` TEXT NOT NULL, `failure_class` TEXT, PRIMARY KEY(`item_id`))",
+        "fields": [
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadVersion",
+            "columnName": "payload_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ciphertext",
+            "columnName": "ciphertext",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imagePath",
+            "columnName": "image_path",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "thumbnailCiphertext",
+            "columnName": "thumbnail_ciphertext",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMicroseconds",
+            "columnName": "created_at_microseconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureClass",
+            "columnName": "failure_class",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_inbound_text_journal_channel_id_created_at_microseconds_item_id",
+            "unique": false,
+            "columnNames": [
+              "channel_id",
+              "created_at_microseconds",
+              "item_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inbound_text_journal_channel_id_created_at_microseconds_item_id` ON `${TABLE_NAME}` (`channel_id`, `created_at_microseconds`, `item_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_cursors",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channel_id` TEXT NOT NULL, `created_at_microseconds` INTEGER NOT NULL, `item_id` TEXT NOT NULL, PRIMARY KEY(`channel_id`))",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMicroseconds",
+            "columnName": "created_at_microseconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channel_id"
+          ]
+        }
+      },
+      {
+        "tableName": "device_directory",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`channel_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `profile_ciphertext` TEXT NOT NULL, `profile_version` INTEGER NOT NULL, `created_at` TEXT NOT NULL, `updated_at` TEXT NOT NULL, PRIMARY KEY(`channel_id`, `device_id`))",
+        "fields": [
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileCiphertext",
+            "columnName": "profile_ciphertext",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileVersion",
+            "columnName": "profile_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "channel_id",
+            "device_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_device_directory_channel_id_updated_at",
+            "unique": false,
+            "columnNames": [
+              "channel_id",
+              "updated_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_device_directory_channel_id_updated_at` ON `${TABLE_NAME}` (`channel_id`, `updated_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "local_images",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`item_id` TEXT NOT NULL, `encrypted_file_name` TEXT NOT NULL, `mime_type` TEXT NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `capture_source` TEXT NOT NULL, `sender_device_id` TEXT, `cloud_sync_state` TEXT NOT NULL, `is_bookmarked` INTEGER NOT NULL DEFAULT 0, `fingerprint` BLOB NOT NULL, `display_name` TEXT, PRIMARY KEY(`item_id`))",
+        "fields": [
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedFileName",
+            "columnName": "encrypted_file_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureSource",
+            "columnName": "capture_source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderDeviceId",
+            "columnName": "sender_device_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cloudSyncState",
+            "columnName": "cloud_sync_state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBookmarked",
+            "columnName": "is_bookmarked",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_images_created_at_epoch_millis_item_id",
+            "unique": false,
+            "columnNames": [
+              "created_at_epoch_millis",
+              "item_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_images_created_at_epoch_millis_item_id` ON `${TABLE_NAME}` (`created_at_epoch_millis`, `item_id`)"
+          },
+          {
+            "name": "index_local_images_fingerprint",
+            "unique": true,
+            "columnNames": [
+              "fingerprint"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_images_fingerprint` ON `${TABLE_NAME}` (`fingerprint`)"
+          }
+        ]
+      },
+      {
+        "tableName": "outbound_image_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`item_id` TEXT NOT NULL, `channel_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `prepared_file_name` TEXT NOT NULL, `image_path` TEXT NOT NULL, `thumbnail_ciphertext` TEXT, `mime_type` TEXT NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `encrypted_byte_count` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `state` TEXT NOT NULL, `attempt_count` INTEGER NOT NULL, `next_attempt_at_epoch_millis` INTEGER NOT NULL, `last_failure` TEXT, PRIMARY KEY(`item_id`))",
+        "fields": [
+          {
+            "fieldPath": "itemId",
+            "columnName": "item_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "channelId",
+            "columnName": "channel_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preparedFileName",
+            "columnName": "prepared_file_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagePath",
+            "columnName": "image_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thumbnailCiphertext",
+            "columnName": "thumbnail_ciphertext",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mime_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedByteCount",
+            "columnName": "encrypted_byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAtEpochMillis",
+            "columnName": "next_attempt_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastFailure",
+            "columnName": "last_failure",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "item_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbound_image_queue_state_next_attempt_at_epoch_millis_created_at_epoch_millis_item_id",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "next_attempt_at_epoch_millis",
+              "created_at_epoch_millis",
+              "item_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbound_image_queue_state_next_attempt_at_epoch_millis_created_at_epoch_millis_item_id` ON `${TABLE_NAME}` (`state`, `next_attempt_at_epoch_millis`, `created_at_epoch_millis`, `item_id`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4ca1a407113b5b9ca5a2da227e419dd7')"
+    ]
+  }
+}
