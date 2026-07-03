@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+option java_package = "com.nishantattrey.clipsync.core.local.proto";
+option java_multiple_files = true;
+
+enum RetentionPeriodProto {
+  RETENTION_PERIOD_UNSPECIFIED = 0;
+  RETENTION_PERIOD_NEVER = 1;
+  RETENTION_PERIOD_ONE_HOUR = 2;
+  RETENTION_PERIOD_SIX_HOURS = 3;
+  RETENTION_PERIOD_ONE_DAY = 4;
+  RETENTION_PERIOD_SEVEN_DAYS = 5;
+  RETENTION_PERIOD_THIRTY_DAYS = 6;
+}
+
+enum ClipboardSensitivityProto {
+  CLIPBOARD_SENSITIVITY_UNSPECIFIED = 0;
+  CLIPBOARD_SENSITIVITY_SENSITIVE = 1;
+  CLIPBOARD_SENSITIVITY_STANDARD = 2;
+}
+
+message LocalSettingsProto {
+  RetentionPeriodProto text_retention = 1;
+  ClipboardSensitivityProto copy_back_sensitivity = 2;
+}

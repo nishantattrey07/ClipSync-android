@@ -1,0 +1,105 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "f314c0dd2148363e320f88c01395ad17",
+    "entities": [
+      {
+        "tableName": "local_clipboard_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `encrypted_payload` BLOB NOT NULL, `fingerprint` BLOB NOT NULL, `envelope_version` INTEGER NOT NULL, `created_at_epoch_millis` INTEGER NOT NULL, `capture_source` TEXT NOT NULL, `plaintext_byte_count` INTEGER NOT NULL, `is_bookmarked` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedPayload",
+            "columnName": "encrypted_payload",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "envelopeVersion",
+            "columnName": "envelope_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "created_at_epoch_millis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureSource",
+            "columnName": "capture_source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plaintextByteCount",
+            "columnName": "plaintext_byte_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isBookmarked",
+            "columnName": "is_bookmarked",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_clipboard_items_fingerprint",
+            "unique": true,
+            "columnNames": [
+              "fingerprint"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_local_clipboard_items_fingerprint` ON `${TABLE_NAME}` (`fingerprint`)"
+          },
+          {
+            "name": "index_local_clipboard_items_created_at_epoch_millis_id",
+            "unique": false,
+            "columnNames": [
+              "created_at_epoch_millis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_clipboard_items_created_at_epoch_millis_id` ON `${TABLE_NAME}` (`created_at_epoch_millis`, `id`)"
+          },
+          {
+            "name": "index_local_clipboard_items_is_bookmarked_created_at_epoch_millis_id",
+            "unique": false,
+            "columnNames": [
+              "is_bookmarked",
+              "created_at_epoch_millis",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_clipboard_items_is_bookmarked_created_at_epoch_millis_id` ON `${TABLE_NAME}` (`is_bookmarked`, `created_at_epoch_millis`, `id`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f314c0dd2148363e320f88c01395ad17')"
+    ]
+  }
+}
