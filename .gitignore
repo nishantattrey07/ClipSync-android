@@ -17,6 +17,7 @@ secrets.properties
 .env.*
 
 /core/protocol/build/
+/core/local/build/
 # Private local agent and protocol compatibility material
 /AGENTS.md
 /.agents/
