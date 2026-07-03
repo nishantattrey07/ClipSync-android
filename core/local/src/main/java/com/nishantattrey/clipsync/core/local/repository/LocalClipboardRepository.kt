@@ -44,6 +44,7 @@ interface LocalClipboardRepository {
     suspend fun search(query: String, bookmarksOnly: Boolean = false): LocalDataResult<List<LocalClipboardItem>>
     suspend fun find(id: String): LocalDataResult<LocalClipboardItem?>
     suspend fun setBookmarked(id: String, bookmarked: Boolean): Boolean
+    suspend fun queueForUpload(id: String): Boolean = false
     suspend fun delete(id: String): Boolean
     suspend fun clearUnbookmarked(): Int
     suspend fun applyRetention(period: RetentionPeriod): Int
@@ -185,6 +186,9 @@ class RoomLocalClipboardRepository(
 
     override suspend fun setBookmarked(id: String, bookmarked: Boolean): Boolean =
         withContext(ioDispatcher) { dao.setBookmarked(id, bookmarked) == 1 }
+
+    override suspend fun queueForUpload(id: String): Boolean =
+        withContext(ioDispatcher) { dao.setCloudSyncState(id, "upload_pending") == 1 }
 
     override suspend fun delete(id: String): Boolean = withContext(ioDispatcher) { dao.deleteById(id) == 1 }
 

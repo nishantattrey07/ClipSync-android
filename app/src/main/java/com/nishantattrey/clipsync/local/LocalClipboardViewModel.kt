@@ -70,12 +70,14 @@ class LocalClipboardViewModel @Inject constructor(
     fun setBookmarksOnly(value: Boolean) { mutableState.update { it.copy(bookmarksOnly = value) }; scheduleRefresh() }
     fun dismissMessage() = mutableState.update { it.copy(message = null) }
 
-    fun captureComposer(onStored: () -> Unit = {}) = viewModelScope.launch {
+    fun captureComposer(onStored: ((String) -> Unit)? = null) = viewModelScope.launch {
         try {
             val result = capture(state.value.composerText, CaptureSource.COMPOSER)
             handle(result, "Saved")
             mutableState.update { it.copy(composerText = "") }
-            if (result is LocalDataResult.Success) onStored()
+            captureId(result)?.let { id ->
+                if (onStored != null && repository.queueForUpload(id)) onStored(id)
+            }
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Text cannot be empty") }
         } catch (_: OversizedCaptureException) {
@@ -83,13 +85,15 @@ class LocalClipboardViewModel @Inject constructor(
         }
     }
 
-    fun importFocusedClipboard(onStored: () -> Unit = {}) = viewModelScope.launch {
+    fun importFocusedClipboard(onStored: ((String) -> Unit)? = null) = viewModelScope.launch {
         try {
             val result = importClipboard()
             if (result == null) mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
             else {
                 handle(result, "Imported")
-                if (result is LocalDataResult.Success) onStored()
+                captureId(result)?.let { id ->
+                    if (onStored != null && repository.queueForUpload(id)) onStored(id)
+                }
             }
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Clipboard text is empty") }
@@ -100,6 +104,10 @@ class LocalClipboardViewModel @Inject constructor(
 
     fun toggleBookmark(item: LocalClipboardItem) = viewModelScope.launch {
         repository.setBookmarked(item.id, !item.isBookmarked)
+    }
+
+    fun upload(item: LocalClipboardItem, synchronize: () -> Unit) = viewModelScope.launch {
+        if (repository.queueForUpload(item.id)) synchronize()
     }
 
     fun copy(item: LocalClipboardItem) {
@@ -197,6 +205,15 @@ class LocalClipboardViewModel @Inject constructor(
             is LocalDataResult.Success -> mutableState.update { it.copy(message = success) }
             is LocalDataResult.RecoveryRequired -> mutableState.update { it.copy(recovery = result.state) }
             is LocalDataResult.CorruptItem -> mutableState.update { it.copy(message = "A local item is corrupt") }
+        }
+    }
+
+    private fun captureId(result: LocalDataResult<*>): String? {
+        val capture = (result as? LocalDataResult.Success)?.value as? com.nishantattrey.clipsync.core.local.model.CaptureResult
+            ?: return null
+        return when (capture) {
+            is com.nishantattrey.clipsync.core.local.model.CaptureResult.Stored -> capture.id
+            is com.nishantattrey.clipsync.core.local.model.CaptureResult.Duplicate -> capture.id
         }
     }
 }

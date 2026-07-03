@@ -218,7 +218,7 @@ private class FakeDao : LocalClipboardDao {
     override suspend fun findByFingerprint(fingerprint: ByteArray) = items.find { it.fingerprint.contentEquals(fingerprint) }
     override suspend fun findById(id: String) = items.find { it.id == id }
     override suspend fun loadUnsynced(limit: Int) = items
-        .filter { it.cloudSyncState == "local" }
+        .filter { it.cloudSyncState == "upload_pending" }
         .sortedWith(compareBy<LocalClipboardEntity> { it.createdAtEpochMillis }.thenBy { it.id })
         .take(limit)
     override suspend fun setCloudSyncState(id: String, state: String): Int {

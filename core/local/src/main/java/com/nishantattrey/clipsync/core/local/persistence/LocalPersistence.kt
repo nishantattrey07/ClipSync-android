@@ -59,7 +59,7 @@ interface LocalClipboardDao {
     @Query("SELECT * FROM local_clipboard_items WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): LocalClipboardEntity?
 
-    @Query("SELECT * FROM local_clipboard_items WHERE cloud_sync_state = 'local' ORDER BY created_at_epoch_millis ASC, id ASC LIMIT :limit")
+    @Query("SELECT * FROM local_clipboard_items WHERE cloud_sync_state = 'upload_pending' ORDER BY created_at_epoch_millis ASC, id ASC LIMIT :limit")
     suspend fun loadUnsynced(limit: Int): List<LocalClipboardEntity>
 
     @Query("UPDATE local_clipboard_items SET cloud_sync_state = :state WHERE id = :id")
@@ -136,11 +136,58 @@ data class InboundTextJournalEntity(
     @ColumnInfo(name = "device_id") val deviceId: String,
     @ColumnInfo(name = "kind") val kind: String,
     @ColumnInfo(name = "payload_version") val payloadVersion: Int,
-    @ColumnInfo(name = "ciphertext") val ciphertext: String,
+    @ColumnInfo(name = "ciphertext") val ciphertext: String?,
+    @ColumnInfo(name = "image_path") val imagePath: String?,
+    @ColumnInfo(name = "thumbnail_ciphertext") val thumbnailCiphertext: String?,
+    @ColumnInfo(name = "mime_type") val mimeType: String?,
     @ColumnInfo(name = "created_at") val createdAt: String,
     @ColumnInfo(name = "created_at_microseconds") val createdAtMicroseconds: Long,
     @ColumnInfo(name = "state") val state: String,
     @ColumnInfo(name = "failure_class") val failureClass: String?,
+)
+
+@Entity(
+    tableName = "local_images",
+    indices = [
+        Index(value = ["created_at_epoch_millis", "item_id"]),
+        Index(value = ["fingerprint"], unique = true),
+    ],
+)
+data class LocalImageEntity(
+    @androidx.room.PrimaryKey @ColumnInfo(name = "item_id") val itemId: String,
+    @ColumnInfo(name = "encrypted_file_name") val encryptedFileName: String,
+    @ColumnInfo(name = "mime_type") val mimeType: String,
+    @ColumnInfo(name = "width") val width: Int,
+    @ColumnInfo(name = "height") val height: Int,
+    @ColumnInfo(name = "created_at_epoch_millis") val createdAtEpochMillis: Long,
+    @ColumnInfo(name = "capture_source") val captureSource: String,
+    @ColumnInfo(name = "sender_device_id") val senderDeviceId: String?,
+    @ColumnInfo(name = "cloud_sync_state") val cloudSyncState: String,
+    @ColumnInfo(name = "is_bookmarked", defaultValue = "0") val isBookmarked: Boolean = false,
+    @ColumnInfo(name = "fingerprint", typeAffinity = ColumnInfo.BLOB) val fingerprint: ByteArray,
+    @ColumnInfo(name = "display_name") val displayName: String?,
+)
+
+@Entity(
+    tableName = "outbound_image_queue",
+    indices = [Index(value = ["state", "next_attempt_at_epoch_millis", "created_at_epoch_millis", "item_id"])],
+)
+data class OutboundImageEntity(
+    @androidx.room.PrimaryKey @ColumnInfo(name = "item_id") val itemId: String,
+    @ColumnInfo(name = "channel_id") val channelId: String,
+    @ColumnInfo(name = "device_id") val deviceId: String,
+    @ColumnInfo(name = "prepared_file_name") val preparedFileName: String,
+    @ColumnInfo(name = "image_path") val imagePath: String,
+    @ColumnInfo(name = "thumbnail_ciphertext") val thumbnailCiphertext: String?,
+    @ColumnInfo(name = "mime_type") val mimeType: String,
+    @ColumnInfo(name = "width") val width: Int,
+    @ColumnInfo(name = "height") val height: Int,
+    @ColumnInfo(name = "encrypted_byte_count") val encryptedByteCount: Int,
+    @ColumnInfo(name = "created_at_epoch_millis") val createdAtEpochMillis: Long,
+    @ColumnInfo(name = "state") val state: String,
+    @ColumnInfo(name = "attempt_count") val attemptCount: Int,
+    @ColumnInfo(name = "next_attempt_at_epoch_millis") val nextAttemptAtEpochMillis: Long,
+    @ColumnInfo(name = "last_failure") val lastFailure: String?,
 )
 
 @Entity(tableName = "sync_cursors")
@@ -201,6 +248,39 @@ interface SyncPersistenceDao {
 
     @Query("SELECT * FROM device_directory WHERE channel_id = :channelId ORDER BY updated_at DESC, device_id DESC")
     fun observeDevices(channelId: String): Flow<List<DeviceDirectoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLocalImage(entity: LocalImageEntity): Long
+
+    @Query("SELECT * FROM local_images WHERE item_id = :itemId LIMIT 1")
+    suspend fun findLocalImage(itemId: String): LocalImageEntity?
+
+    @Query("SELECT * FROM local_images WHERE fingerprint = :fingerprint LIMIT 1")
+    suspend fun findLocalImageByFingerprint(fingerprint: ByteArray): LocalImageEntity?
+
+    @Query("SELECT * FROM local_images ORDER BY created_at_epoch_millis DESC, item_id DESC")
+    fun observeLocalImages(): Flow<List<LocalImageEntity>>
+
+    @Query("UPDATE local_images SET cloud_sync_state = :state WHERE item_id = :itemId")
+    suspend fun setLocalImageCloudState(itemId: String, state: String): Int
+
+    @Query("UPDATE local_images SET is_bookmarked = :bookmarked WHERE item_id = :itemId")
+    suspend fun setLocalImageBookmarked(itemId: String, bookmarked: Boolean): Int
+
+    @Query("DELETE FROM local_images WHERE item_id = :itemId AND NOT EXISTS (SELECT 1 FROM outbound_image_queue WHERE item_id = :itemId AND state IN ('prepared', 'object_uploaded', 'retry'))")
+    suspend fun deleteLocalImage(itemId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertOutboundImage(entity: OutboundImageEntity): Long
+
+    @Query("SELECT * FROM outbound_image_queue WHERE item_id = :itemId LIMIT 1")
+    suspend fun findOutboundImage(itemId: String): OutboundImageEntity?
+
+    @Query("SELECT * FROM outbound_image_queue WHERE state IN ('prepared', 'object_uploaded', 'retry') AND next_attempt_at_epoch_millis <= :now ORDER BY created_at_epoch_millis ASC, item_id ASC LIMIT :limit")
+    suspend fun loadDueOutboundImages(now: Long, limit: Int): List<OutboundImageEntity>
+
+    @Query("UPDATE outbound_image_queue SET state = :state, attempt_count = :attemptCount, next_attempt_at_epoch_millis = :nextAttemptAt, last_failure = :failure WHERE item_id = :itemId")
+    suspend fun updateOutboundImage(itemId: String, state: String, attemptCount: Int, nextAttemptAt: Long, failure: String?): Int
 }
 
 @Database(
@@ -210,8 +290,10 @@ interface SyncPersistenceDao {
         InboundTextJournalEntity::class,
         SyncCursorEntity::class,
         DeviceDirectoryEntity::class,
+        LocalImageEntity::class,
+        OutboundImageEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class ClipSyncDatabase : RoomDatabase() {

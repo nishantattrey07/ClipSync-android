@@ -13,6 +13,13 @@ import com.nishantattrey.clipsync.core.sync.engine.CloudSyncCoordinator
 import com.nishantattrey.clipsync.core.sync.engine.TextSyncEngine
 import com.nishantattrey.clipsync.core.sync.identity.DeviceProfileCodec
 import com.nishantattrey.clipsync.core.sync.identity.EncryptedDeviceIdentityStore
+import com.nishantattrey.clipsync.core.sync.image.AndroidImageProcessor
+import com.nishantattrey.clipsync.core.sync.image.AndroidPreparedImageStore
+import com.nishantattrey.clipsync.core.sync.image.ImageInboundHandler
+import com.nishantattrey.clipsync.core.sync.image.ImageProcessor
+import com.nishantattrey.clipsync.core.sync.image.ImageSyncEngine
+import com.nishantattrey.clipsync.core.sync.image.PreparedImageStore
+import com.nishantattrey.clipsync.core.sync.image.LocalImageKeyStore
 import com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransportFactory
 import com.nishantattrey.clipsync.core.sync.model.Clock
 import com.nishantattrey.clipsync.core.sync.model.CloudConfigurationStore
@@ -23,6 +30,8 @@ import com.nishantattrey.clipsync.core.sync.network.SupabaseRealtimeWakeSource
 import com.nishantattrey.clipsync.core.sync.persistence.SyncQueueStore
 import com.nishantattrey.clipsync.core.sync.platform.AndroidSecureBlobStore
 import com.nishantattrey.clipsync.core.sync.realtime.RealtimeSyncController
+import com.nishantattrey.clipsync.platform.AndroidImageUriReader
+import com.nishantattrey.clipsync.platform.ImageUriReader
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -36,6 +45,8 @@ import kotlinx.coroutines.SupervisorJob
 @Module
 @InstallIn(SingletonComponent::class)
 object SyncModule {
+    @Provides @Singleton fun imageUriReader(@ApplicationContext context: Context): ImageUriReader =
+        AndroidImageUriReader(context.contentResolver)
     @Provides @Singleton fun keyDeriver(): KeyDeriver = Argon2KeyDeriver()
     @Provides @Singleton fun secureBlobs(@ApplicationContext context: Context): SecureBlobStore =
         AndroidSecureBlobStore(context)
@@ -45,6 +56,13 @@ object SyncModule {
 
     @Provides @Singleton fun identity(blobs: SecureBlobStore): DeviceIdentityStore =
         EncryptedDeviceIdentityStore(blobs, SecureRandomBytes())
+
+    @Provides @Singleton fun preparedImages(@ApplicationContext context: Context): PreparedImageStore =
+        AndroidPreparedImageStore(context)
+
+    @Provides @Singleton fun imageProcessor(): ImageProcessor = AndroidImageProcessor()
+    @Provides @Singleton fun localImageKeys(blobs: SecureBlobStore): LocalImageKeyStore =
+        LocalImageKeyStore(blobs, SecureRandomBytes())
 
     @Provides @Singleton fun transportFactory(): ClipboardCloudTransportFactory =
         ClipboardCloudTransportFactory(::SupabaseRestTransport)
@@ -71,6 +89,8 @@ object SyncModule {
         keyDeriver: KeyDeriver,
         store: LocalStore,
         local: LocalClipboardRepository,
+        preparedImages: PreparedImageStore,
+        imageProcessor: ImageProcessor,
     ): CloudSyncCoordinator {
         val encryption = JcaAesGcm()
         val queue = SyncQueueStore(store.database)
@@ -83,7 +103,16 @@ object SyncModule {
             database = store.database,
             local = local,
             engineFactory = { transport ->
-                TextSyncEngine(transport, queue, local, encryption, Clock(System::currentTimeMillis))
+                TextSyncEngine(
+                    transport, queue, local, encryption, Clock(System::currentTimeMillis),
+                    ImageInboundHandler(store.database, transport, preparedImages, imageProcessor, encryption, queue),
+                )
+            },
+            imageEngineFactory = { transport ->
+                ImageSyncEngine(
+                    store.database, transport, preparedImages, imageProcessor, encryption,
+                    Clock(System::currentTimeMillis),
+                )
             },
             appVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown",
         )

@@ -19,6 +19,7 @@ import com.nishantattrey.clipsync.core.sync.model.Clock
 import com.nishantattrey.clipsync.core.sync.model.SyncFailure
 import com.nishantattrey.clipsync.core.sync.model.TransportResult
 import com.nishantattrey.clipsync.core.sync.persistence.DurableSyncStore
+import com.nishantattrey.clipsync.core.sync.image.ImageInboundHandler
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -30,6 +31,7 @@ class TextSyncEngine(
     private val local: LocalClipboardRepository,
     private val encryption: AuthenticatedEncryption,
     private val clock: Clock,
+    private val imageInbound: ImageInboundHandler? = null,
 ) {
     suspend fun prepareOutbound(
         itemId: String,
@@ -116,7 +118,7 @@ class TextSyncEngine(
             }
             val validated = rows.map { row ->
                 ClipboardRowValidator.validate(row, session.channelId)
-                require(row.kind == "text") { "Gate 3 accepts text rows only." }
+                require(row.kind == "text" || row.kind == "image") { "Unsupported clipboard kind." }
                 row to ServerTimestampCodec.parseMicroseconds(row.createdAt)
             }
             require(validated.zipWithNext().all { (a, b) ->
@@ -136,8 +138,21 @@ class TextSyncEngine(
                 queue.acknowledgeAndAdvance(entry.itemId, cursor)
                 continue
             }
+            if (entry.kind == "image") {
+                val handler = imageInbound
+                if (handler == null) {
+                    queue.markPermanentInboundFailure(entry.itemId, "image_handler_unavailable", cursor)
+                    continue
+                }
+                if (!handler.process(entry, cursor, keys)) return
+                continue
+            }
+            val ciphertext = entry.ciphertext ?: run {
+                queue.markPermanentInboundFailure(entry.itemId, "missing_text_ciphertext", cursor)
+                continue
+            }
             val encrypted = try {
-                WireEncoding.decodeStandardBase64(entry.ciphertext)
+                WireEncoding.decodeStandardBase64(ciphertext)
             } catch (_: IllegalArgumentException) {
                 queue.markPermanentInboundFailure(entry.itemId, "invalid_ciphertext", cursor)
                 continue

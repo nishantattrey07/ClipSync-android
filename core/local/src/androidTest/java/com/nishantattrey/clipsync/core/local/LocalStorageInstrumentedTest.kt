@@ -16,6 +16,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalKeyPurpose
 import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.persistence.ClipSyncDatabase
 import com.nishantattrey.clipsync.core.local.persistence.MIGRATION_1_2
+import com.nishantattrey.clipsync.core.local.persistence.MIGRATION_2_3
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryCoordinator
 import com.nishantattrey.clipsync.core.local.repository.RoomLocalClipboardRepository
 import java.security.KeyStore
@@ -92,11 +93,40 @@ class LocalStorageInstrumentedTest {
         database.close()
     }
 
-    @Test fun completeSchemaVersionTwoReopensWithoutDestructiveFallback() {
+    @Test fun completeSchemaVersionThreeReopensWithoutDestructiveFallback() {
         openDatabase().close()
         val reopened = openDatabase()
-        assertEquals(2, reopened.openHelper.readableDatabase.version)
+        assertEquals(3, reopened.openHelper.readableDatabase.version)
         reopened.close()
+    }
+
+    @Test fun migrationTwoToThreePreservesTextJournalAndAddsImageTables() {
+        val name = "gate4-migration.db"
+        context.deleteDatabase(name)
+        migrationHelper.createDatabase(name, 2).apply {
+            execSQL(
+                "INSERT INTO inbound_text_journal (item_id, channel_id, device_id, kind, payload_version, ciphertext, created_at, created_at_microseconds, state) VALUES (?, ?, ?, 'text', 1, ?, '2026-01-01T00:00:00.000001Z', 1, 'pending')",
+                arrayOf(
+                    "00000000-0000-0000-0000-000000000001",
+                    "ab".repeat(32),
+                    "00000000-0000-0000-0000-000000000002",
+                    "AA==",
+                ),
+            )
+            close()
+        }
+        migrationHelper.runMigrationsAndValidate(name, 3, true, MIGRATION_2_3).apply {
+            query("SELECT kind, ciphertext, image_path FROM inbound_text_journal").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("text", it.getString(0))
+                assertEquals("AA==", it.getString(1))
+                assertTrue(it.isNull(2))
+            }
+            query("SELECT COUNT(*) FROM local_images").close()
+            query("SELECT COUNT(*) FROM outbound_image_queue").close()
+            close()
+        }
+        context.deleteDatabase(name)
     }
 
     @Test fun migrationOneToTwoPreservesEncryptedHistoryAndAddsDurableSyncTables() {
@@ -123,7 +153,7 @@ class LocalStorageInstrumentedTest {
 
     private fun openDatabase(): ClipSyncDatabase =
         Room.databaseBuilder(context, ClipSyncDatabase::class.java, databaseName)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     private fun repository(database: ClipSyncDatabase): RoomLocalClipboardRepository {

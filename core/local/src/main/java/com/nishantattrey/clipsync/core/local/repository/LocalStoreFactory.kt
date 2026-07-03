@@ -7,16 +7,18 @@ import com.nishantattrey.clipsync.core.local.crypto.AndroidKeystoreLocalKeyMater
 import com.nishantattrey.clipsync.core.local.crypto.HmacSha256LocalFingerprint
 import com.nishantattrey.clipsync.core.local.persistence.ClipSyncDatabase
 import com.nishantattrey.clipsync.core.local.persistence.MIGRATION_1_2
+import com.nishantattrey.clipsync.core.local.persistence.MIGRATION_2_3
 
 class LocalStore internal constructor(
     val database: ClipSyncDatabase,
     val repository: LocalClipboardRepository,
     val recovery: LocalRecoveryCoordinator,
+    val fingerprint: HmacSha256LocalFingerprint,
 )
 
 fun createLocalStore(context: Context): LocalStore {
     val database = Room.databaseBuilder(context, ClipSyncDatabase::class.java, "clipsync-local-v1.db")
-        .addMigrations(MIGRATION_1_2)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
         .build()
     val keys = AndroidKeystoreLocalKeyMaterial()
     val cipher = AesGcmLocalPayloadCipher(keys)
@@ -29,5 +31,6 @@ fun createLocalStore(context: Context): LocalStore {
             fingerprint,
         ),
         recovery = LocalRecoveryCoordinator(database.localClipboardDao(), keys, cipher, fingerprint),
+        fingerprint = fingerprint,
     )
 }

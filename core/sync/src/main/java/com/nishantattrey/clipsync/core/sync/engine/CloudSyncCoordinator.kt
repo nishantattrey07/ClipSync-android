@@ -11,6 +11,7 @@ import com.nishantattrey.clipsync.core.protocol.model.DeviceProfile
 import com.nishantattrey.clipsync.core.protocol.model.RegisterDeviceParameters
 import com.nishantattrey.clipsync.core.protocol.validation.DeviceRecordValidator
 import com.nishantattrey.clipsync.core.sync.identity.DeviceProfileCodec
+import com.nishantattrey.clipsync.core.sync.image.ImageSyncEngine
 import com.nishantattrey.clipsync.core.sync.model.ChannelSession
 import com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransportFactory
 import com.nishantattrey.clipsync.core.sync.model.CloudConfigurationStore
@@ -31,6 +32,7 @@ class CloudSyncCoordinator(
     private val database: ClipSyncDatabase,
     private val local: LocalClipboardRepository,
     private val engineFactory: (com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransport) -> TextSyncEngine,
+    private val imageEngineFactory: ((com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransport) -> ImageSyncEngine)? = null,
     private val appVersion: String,
     private val cryptoDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
@@ -48,13 +50,19 @@ class CloudSyncCoordinator(
                 val engine = engineFactory(transport)
                 prepareUnsynced(engine, session, keys)
                 val outbound = engine.drainOutbound(session)
+                val imageOutbound = imageEngineFactory?.invoke(transport)?.drain(session)
                 val inbound = engine.catchUp(session, keys)
                 val directory = refreshDirectory(transport, session, keys)
                 when {
                     outbound.stoppedBy != null -> outbound.stoppedBy.toSynchronizeResult()
+                    imageOutbound?.stoppedBy != null -> imageOutbound.stoppedBy.toSynchronizeResult()
                     inbound.stoppedBy != null -> inbound.stoppedBy.toSynchronizeResult()
                     directory.failure != null -> directory.failure.toSynchronizeResult()
-                    else -> SynchronizeResult.Connected(outbound.uploaded, inbound.received, directory.devices)
+                    else -> SynchronizeResult.Connected(
+                        outbound.uploaded + (imageOutbound?.uploaded ?: 0),
+                        inbound.received,
+                        directory.devices,
+                    )
                 }
             } finally {
                 keys.clear()

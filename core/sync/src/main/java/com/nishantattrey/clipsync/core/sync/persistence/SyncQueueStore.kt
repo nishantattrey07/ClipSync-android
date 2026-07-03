@@ -43,6 +43,7 @@ class SyncQueueStore(private val database: ClipSyncDatabase) : DurableSyncStore 
         when (state) {
             "synced" -> database.localClipboardDao().setCloudSyncState(entity.itemId, "synced")
             "failed" -> database.localClipboardDao().setCloudSyncState(entity.itemId, "failed")
+            else -> database.localClipboardDao().setCloudSyncState(entity.itemId, "retrying")
         }
         updated
     }
@@ -57,7 +58,10 @@ class SyncQueueStore(private val database: ClipSyncDatabase) : DurableSyncStore 
                         deviceId = row.deviceId,
                         kind = row.kind,
                         payloadVersion = row.payloadVersion,
-                        ciphertext = requireNotNull(row.ciphertext),
+                        ciphertext = row.ciphertext,
+                        imagePath = row.imagePath,
+                        thumbnailCiphertext = row.thumbnailCiphertext,
+                        mimeType = row.mimeType,
                         createdAt = row.createdAt,
                         createdAtMicroseconds = micros,
                         state = "pending",

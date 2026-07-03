@@ -42,7 +42,13 @@ interface ClipboardCloudTransport {
     suspend fun insertText(parameters: InsertClipboardItemParameters): TransportResult<ClipboardInsertResult>
     suspend fun fetchAfter(parameters: FetchAfterParameters): TransportResult<List<ClipboardItemRecord>>
     suspend fun fetchDevices(channelId: String): TransportResult<List<ClipboardDeviceRecord>>
+    suspend fun uploadEncryptedImage(path: String, exactBytes: ByteArray): TransportResult<StorageUploadResult> =
+        TransportResult.Failure(SyncFailure.Rejected("Image Storage is unavailable."))
+    suspend fun downloadEncryptedImage(path: String): TransportResult<ByteArray> =
+        TransportResult.Failure(SyncFailure.Rejected("Image Storage is unavailable."))
 }
+
+enum class StorageUploadResult { UPLOADED, IDENTICAL_EXISTING, COLLISION }
 
 fun interface ClipboardCloudTransportFactory {
     fun create(endpoint: CloudEndpoint): ClipboardCloudTransport

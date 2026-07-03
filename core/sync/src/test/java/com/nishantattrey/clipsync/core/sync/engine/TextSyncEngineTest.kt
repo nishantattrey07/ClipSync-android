@@ -186,7 +186,10 @@ private class FakeStore(
     }
     override suspend fun journalPage(rows: List<Pair<ClipboardItemRecord, Long>>) {
         events += "journal"
-        rows.forEach { (row, micros) -> if (journal.none { it.itemId == row.id }) journal += InboundTextJournalEntity(row.id, row.channelId, row.deviceId, row.kind, row.payloadVersion, row.ciphertext!!, row.createdAt, micros, "pending", null) }
+        rows.forEach { (row, micros) -> if (journal.none { it.itemId == row.id }) journal += InboundTextJournalEntity(
+            row.id, row.channelId, row.deviceId, row.kind, row.payloadVersion, row.ciphertext,
+            row.imagePath, row.thumbnailCiphertext, row.mimeType, row.createdAt, micros, "pending", null,
+        ) }
     }
     override suspend fun pendingInbound(channelId: String, limit: Int) = journal.filter { it.channelId == channelId }.take(limit)
     override suspend fun acknowledgeAndAdvance(itemId: String, cursor: SyncCursor) { savedCursor = cursor; events += "cursor"; journal.removeAll { it.itemId == itemId }; events += "delete" }

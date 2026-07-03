@@ -11,6 +11,9 @@ import com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransport
 import com.nishantattrey.clipsync.core.sync.model.CloudEndpoint
 import com.nishantattrey.clipsync.core.sync.model.SyncFailure
 import com.nishantattrey.clipsync.core.sync.model.TransportResult
+import com.nishantattrey.clipsync.core.sync.model.StorageUploadResult
+import com.nishantattrey.clipsync.core.protocol.ProtocolV1
+import com.nishantattrey.clipsync.core.protocol.validation.StoragePathValidator
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
@@ -20,6 +23,9 @@ import io.ktor.client.request.accept
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.request.get
+import io.ktor.client.request.put
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -31,6 +37,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import io.ktor.utils.io.readAvailable
+import java.io.ByteArrayOutputStream
 
 class SupabaseRestTransport(
     private val endpoint: CloudEndpoint,
@@ -54,6 +62,73 @@ class SupabaseRestTransport(
         rpc<ChannelParameters, List<ClipboardDeviceRecord>, List<ClipboardDeviceRecord>>(
             "get_clipboard_devices", ChannelParameters(channelId),
         ) { it }
+
+    override suspend fun uploadEncryptedImage(path: String, exactBytes: ByteArray): TransportResult<StorageUploadResult> {
+        StoragePathValidator.validate(path)
+        require(exactBytes.size <= ProtocolV1.MAX_STORAGE_OBJECT_BYTES) { "Encrypted image exceeds the V1 limit." }
+        return networkResult {
+            val response = client.put("${endpoint.supabaseUrl}/storage/v1/object/${ProtocolV1.IMAGE_BUCKET}/$path") {
+                header("apikey", endpoint.publishableKey)
+                header("Authorization", "Bearer ${endpoint.publishableKey}")
+                header("x-upsert", "false")
+                header("If-None-Match", "*")
+                contentType(ContentType.Application.OctetStream)
+                setBody(exactBytes)
+            }
+            when {
+                response.status.value in 200..299 -> StorageUploadResult.UPLOADED
+                response.status.value == 409 -> when (val existing = downloadEncryptedImage(path)) {
+                    is TransportResult.Success -> try {
+                        if (existing.value.contentEquals(exactBytes)) StorageUploadResult.IDENTICAL_EXISTING
+                        else StorageUploadResult.COLLISION
+                    } finally { existing.value.fill(0) }
+                    is TransportResult.Failure -> throw StorageReadException(existing.failure)
+                }
+                else -> throw HttpStatusException(response.status)
+            }
+        }
+    }
+
+    override suspend fun downloadEncryptedImage(path: String): TransportResult<ByteArray> {
+        StoragePathValidator.validate(path)
+        return networkResult {
+            val response = client.get("${endpoint.supabaseUrl}/storage/v1/object/${ProtocolV1.IMAGE_BUCKET}/$path") {
+                header("apikey", endpoint.publishableKey)
+                header("Authorization", "Bearer ${endpoint.publishableKey}")
+            }
+            if (response.status.value !in 200..299) throw HttpStatusException(response.status)
+            val channel = response.bodyAsChannel()
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(32 * 1024)
+            try {
+                var total = 0
+                while (!channel.isClosedForRead) {
+                    val count = channel.readAvailable(buffer)
+                    if (count <= 0) continue
+                    total += count
+                    if (total > ProtocolV1.MAX_STORAGE_OBJECT_BYTES) throw IllegalArgumentException("Encrypted image exceeds the V1 limit.")
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            } finally { buffer.fill(0) }
+        }
+    }
+
+    private suspend fun <T> networkResult(block: suspend () -> T): TransportResult<T> = try {
+        withTimeout(timeoutMillis) { TransportResult.Success(block()) }
+    } catch (_: TimeoutCancellationException) {
+        TransportResult.Failure(SyncFailure.TimedOut)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: StorageReadException) {
+        TransportResult.Failure(error.failure)
+    } catch (error: HttpStatusException) {
+        TransportResult.Failure(classifyStatus(error.status))
+    } catch (_: IOException) {
+        TransportResult.Failure(SyncFailure.Offline)
+    } catch (_: IllegalArgumentException) {
+        TransportResult.Failure(SyncFailure.InvalidRemoteData("Invalid encrypted image object."))
+    }
 
     private suspend inline fun <reified Request : Any> rpcWithoutResponse(
         function: String,
@@ -116,6 +191,9 @@ class SupabaseRestTransport(
         }
     }
 }
+
+private class HttpStatusException(val status: HttpStatusCode) : Exception()
+private class StorageReadException(val failure: SyncFailure) : Exception()
 
 @Serializable
 private data class ChannelParameters(@SerialName("p_channel_id") val channelId: String)
