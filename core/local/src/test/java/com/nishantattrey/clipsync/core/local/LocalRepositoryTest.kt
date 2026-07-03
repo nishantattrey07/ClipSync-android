@@ -210,13 +210,21 @@ private class FakeDao : LocalClipboardDao {
     private val count = MutableStateFlow(0)
 
     override suspend fun insert(entity: LocalClipboardEntity): Long {
-        if (items.any { it.id == entity.id || it.fingerprint.contentEquals(entity.fingerprint) }) return -1
+        if (items.any { it.id == entity.id }) return -1
         items += entity
         count.value = items.size
         return items.size.toLong()
     }
     override suspend fun findByFingerprint(fingerprint: ByteArray) = items.find { it.fingerprint.contentEquals(fingerprint) }
     override suspend fun findById(id: String) = items.find { it.id == id }
+    override suspend fun loadUnsynced(limit: Int) = items
+        .filter { it.cloudSyncState == "local" }
+        .sortedWith(compareBy<LocalClipboardEntity> { it.createdAtEpochMillis }.thenBy { it.id })
+        .take(limit)
+    override suspend fun setCloudSyncState(id: String, state: String): Int {
+        val index = items.indexOfFirst { it.id == id }; if (index < 0) return 0
+        items[index] = items[index].copy(cloudSyncState = state); return 1
+    }
     override suspend fun loadPage(bookmarksOnly: Boolean, beforeCreated: Long?, beforeId: String?, limit: Int) =
         items.asSequence().also { loadPageCalls++ }.filter { !bookmarksOnly || it.isBookmarked }
             .filter { beforeCreated == null || it.createdAtEpochMillis < beforeCreated ||

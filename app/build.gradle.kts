@@ -48,6 +48,7 @@ android {
 dependencies {
     implementation(project(":core:protocol"))
     implementation(project(":core:local"))
+    implementation(project(":core:sync"))
     add("privateProtocolImplementation", libs.androidx.tracing)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

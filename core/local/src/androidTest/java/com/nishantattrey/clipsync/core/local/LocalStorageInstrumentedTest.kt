@@ -2,6 +2,8 @@ package com.nishantattrey.clipsync.core.local
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.nishantattrey.clipsync.core.local.crypto.AesGcmLocalPayloadCipher
@@ -13,6 +15,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalDataResult
 import com.nishantattrey.clipsync.core.local.model.LocalKeyPurpose
 import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.persistence.ClipSyncDatabase
+import com.nishantattrey.clipsync.core.local.persistence.MIGRATION_1_2
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryCoordinator
 import com.nishantattrey.clipsync.core.local.repository.RoomLocalClipboardRepository
 import java.security.KeyStore
@@ -23,10 +26,17 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalStorageInstrumentedTest {
+    @get:Rule val migrationHelper = MigrationTestHelper(
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation(),
+        ClipSyncDatabase::class.java,
+        emptyList(),
+        FrameworkSQLiteOpenHelperFactory(),
+    )
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val databaseName = "gate2-instrumented.db"
 
@@ -82,15 +92,39 @@ class LocalStorageInstrumentedTest {
         database.close()
     }
 
-    @Test fun completeSchemaVersionOneReopensWithoutDestructiveFallback() {
+    @Test fun completeSchemaVersionTwoReopensWithoutDestructiveFallback() {
         openDatabase().close()
         val reopened = openDatabase()
-        assertEquals(1, reopened.openHelper.readableDatabase.version)
+        assertEquals(2, reopened.openHelper.readableDatabase.version)
         reopened.close()
     }
 
+    @Test fun migrationOneToTwoPreservesEncryptedHistoryAndAddsDurableSyncTables() {
+        val name = "gate3-migration.db"
+        context.deleteDatabase(name)
+        migrationHelper.createDatabase(name, 1).apply {
+            execSQL(
+                "INSERT INTO local_clipboard_items (id, encrypted_payload, fingerprint, envelope_version, created_at_epoch_millis, capture_source, plaintext_byte_count, is_bookmarked) VALUES (?, ?, ?, 1, 1, 'COMPOSER', 1, 0)",
+                arrayOf("00000000-0000-0000-0000-000000000001", byteArrayOf(1), byteArrayOf(2)),
+            )
+            close()
+        }
+        migrationHelper.runMigrationsAndValidate(name, 2, true, MIGRATION_1_2).apply {
+            query("SELECT cloud_sync_state FROM local_clipboard_items").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("local", it.getString(0))
+            }
+            query("SELECT COUNT(*) FROM outbound_text_queue").close()
+            query("SELECT COUNT(*) FROM inbound_text_journal").close()
+            close()
+        }
+        context.deleteDatabase(name)
+    }
+
     private fun openDatabase(): ClipSyncDatabase =
-        Room.databaseBuilder(context, ClipSyncDatabase::class.java, databaseName).build()
+        Room.databaseBuilder(context, ClipSyncDatabase::class.java, databaseName)
+            .addMigrations(MIGRATION_1_2)
+            .build()
 
     private fun repository(database: ClipSyncDatabase): RoomLocalClipboardRepository {
         val keys = AndroidKeystoreLocalKeyMaterial()

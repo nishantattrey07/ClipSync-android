@@ -8,7 +8,7 @@ data class LocalClipboardItem(
     val isBookmarked: Boolean,
 )
 
-enum class CaptureSource { SHARE, FOCUSED_IMPORT, COMPOSER }
+enum class CaptureSource { SHARE, FOCUSED_IMPORT, COMPOSER, CLOUD }
 
 enum class RetentionPeriod(val durationMillis: Long?) {
     NEVER(null),

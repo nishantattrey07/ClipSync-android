@@ -24,6 +24,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    sourceSets {
+        getByName("androidTest").assets.directories.add(file("$projectDir/schemas"))
+    }
 }
 
 protobuf {

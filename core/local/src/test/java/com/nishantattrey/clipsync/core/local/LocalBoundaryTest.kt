@@ -64,6 +64,8 @@ private class RecordingClipboard : ClipboardGateway {
 private class NoOpRepository : LocalClipboardRepository {
     override val changes: Flow<Int> = flowOf(0)
     override suspend fun capture(text: String, source: CaptureSource) = error("must not capture")
+    override suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean> =
+        error("must not store inbound")
     override suspend fun page(bookmarksOnly: Boolean, before: LocalClipboardItem?, limit: Int): LocalDataResult<List<LocalClipboardItem>> = LocalDataResult.Success(emptyList())
     override suspend fun search(query: String, bookmarksOnly: Boolean): LocalDataResult<List<LocalClipboardItem>> = LocalDataResult.Success(emptyList())
     override suspend fun find(id: String): LocalDataResult<LocalClipboardItem?> = LocalDataResult.Success(null)

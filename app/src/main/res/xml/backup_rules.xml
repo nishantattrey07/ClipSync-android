@@ -8,4 +8,5 @@
 <full-backup-content>
     <exclude domain="database" path="." />
     <exclude domain="file" path="datastore/" />
+    <exclude domain="sharedpref" path="clipsync_cloud_secure_v1.xml" />
 </full-backup-content>

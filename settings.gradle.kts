@@ -26,3 +26,4 @@ rootProject.name = "Clipsync"
 include(":app")
 include(":core:protocol")
 include(":core:local")
+include(":core:sync")

@@ -39,6 +39,7 @@ fun interface LocalIdGenerator { fun next(): String }
 interface LocalClipboardRepository {
     val changes: Flow<Int>
     suspend fun capture(text: String, source: CaptureSource): LocalDataResult<CaptureResult>
+    suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean>
     suspend fun page(bookmarksOnly: Boolean, before: LocalClipboardItem? = null, limit: Int = MAX_PAGE_SIZE): LocalDataResult<List<LocalClipboardItem>>
     suspend fun search(query: String, bookmarksOnly: Boolean = false): LocalDataResult<List<LocalClipboardItem>>
     suspend fun find(id: String): LocalDataResult<LocalClipboardItem?>
@@ -97,6 +98,43 @@ class RoomLocalClipboardRepository(
                 bytes.fill(0)
             }
         }
+
+    override suspend fun storeInbound(
+        id: String,
+        text: String,
+        createdAtEpochMillis: Long,
+    ): LocalDataResult<Boolean> = withContext(ioDispatcher) {
+        if (text.isEmpty()) throw EmptyCaptureException()
+        val bytes = text.toByteArray(StandardCharsets.UTF_8)
+        try {
+            if (bytes.size > MAX_LOCAL_TEXT_UTF8_BYTES) throw OversizedCaptureException()
+            if (dao.findById(id) != null) return@withContext LocalDataResult.Success(false)
+            val digest = fingerprint.compute(bytes)
+            val inserted = dao.insert(
+                LocalClipboardEntity(
+                    id = id,
+                    encryptedPayload = cipher.encrypt(id, bytes),
+                    fingerprint = digest,
+                    envelopeVersion = LOCAL_ENVELOPE_VERSION,
+                    createdAtEpochMillis = createdAtEpochMillis,
+                    captureSource = CaptureSource.CLOUD.name,
+                    plaintextByteCount = bytes.size,
+                    isBookmarked = false,
+                    cloudSyncState = "synced",
+                ),
+            ) != -1L
+            dao.trimUnbookmarked(MAX_UNBOOKMARKED_HISTORY)
+            LocalDataResult.Success(inserted)
+        } catch (error: MissingLocalKeyException) {
+            LocalDataResult.RecoveryRequired(LocalRecoveryState.MissingKeys(setOf(error.purpose)))
+        } catch (error: InvalidatedLocalKeyException) {
+            LocalDataResult.RecoveryRequired(LocalRecoveryState.InvalidatedKeys(setOf(error.purpose)))
+        } catch (error: GeneralSecurityException) {
+            LocalDataResult.RecoveryRequired(LocalRecoveryState.TemporarilyUnavailable(error.javaClass.simpleName))
+        } finally {
+            bytes.fill(0)
+        }
+    }
 
     override suspend fun page(
         bookmarksOnly: Boolean,

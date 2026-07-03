@@ -16,8 +16,15 @@ secrets.properties
 .env
 .env.*
 
-/core/protocol/build/
-/core/local/build/
+/core/*/build/
+
+# Accidental local command-output artifacts
+/A
+/Compilation
+/Configure
+/Get
+/Run
+/Task
 # Private local agent and protocol compatibility material
 /AGENTS.md
 /.agents/

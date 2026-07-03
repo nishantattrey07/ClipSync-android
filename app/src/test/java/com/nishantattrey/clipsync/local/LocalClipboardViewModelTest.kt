@@ -92,6 +92,8 @@ private class ViewModelRepository : LocalClipboardRepository {
 
     override suspend fun capture(text: String, source: CaptureSource): LocalDataResult<CaptureResult> =
         LocalDataResult.Success(CaptureResult.Stored("captured"))
+    override suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean> =
+        LocalDataResult.Success(true)
 
     override suspend fun page(
         bookmarksOnly: Boolean,
