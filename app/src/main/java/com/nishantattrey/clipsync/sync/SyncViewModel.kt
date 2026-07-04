@@ -65,6 +65,27 @@ class SyncViewModel @Inject constructor(
     fun updateSecret(value: String) = mutableState.update { it.copy(channelSecret = value) }
     fun updateDeviceName(value: String) = mutableState.update { it.copy(deviceName = value) }
 
+    fun saveDeviceName() = viewModelScope.launch {
+        val existing = configurations.load() ?: return@launch
+        try {
+            val renamed = validateConfiguration(
+                existing.endpoint.supabaseUrl,
+                existing.endpoint.publishableKey,
+                existing.channelId,
+                existing.channelPassword.concatToString(),
+                state.value.deviceName.trim(),
+            )
+            configurations.save(renamed)
+            renamed.clearSensitive()
+            mutableState.update { it.copy(deviceName = state.value.deviceName.trim(), error = null) }
+            synchronize()
+        } catch (_: IllegalArgumentException) {
+            mutableState.update { it.copy(error = "Device name must be valid and no longer than 80 characters.") }
+        } finally {
+            existing.clearSensitive()
+        }
+    }
+
     fun saveConfiguration() = viewModelScope.launch {
         val snapshot = state.value
         mutableState.update { it.copy(isBusy = true, error = null, status = "Connecting") }

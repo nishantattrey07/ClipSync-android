@@ -21,8 +21,10 @@ enum class RetentionPeriod(val durationMillis: Long?) {
 }
 
 data class LocalSettings(
-    val retentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
+    val textRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
+    val imageRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
     val markCopiedTextSensitive: Boolean = true,
+    val deviceAliases: Map<String, String> = emptyMap(),
 )
 
 sealed interface LocalRecoveryState {

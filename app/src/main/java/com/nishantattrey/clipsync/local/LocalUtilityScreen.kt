@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.text.format.DateUtils
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,13 +65,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nishantattrey.clipsync.R
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
@@ -111,11 +119,22 @@ fun LocalUtilityScreen(
     LaunchedEffect(openShared) {
         section = if (openShared) HistorySection.SHARED else HistorySection.LOCAL
     }
+    LaunchedEffect(state.settings.imageRetentionPeriod) {
+        imageViewModel.applyRetention(state.settings.imageRetentionPeriod)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (syncState.configured) section.title else "ClipSync") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Image(painterResource(R.drawable.clipsync_brand_mark), contentDescription = null, modifier = Modifier.size(36.dp))
+                        Column {
+                            Text("ClipSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            if (syncState.configured) Text(section.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
                 actions = {
                     if (syncState.configured) {
                         IconButton(onClick = { searchExpanded = !searchExpanded }) {
@@ -187,6 +206,17 @@ fun LocalUtilityScreen(
                                 placeholder = { Text("Search clips") },
                                 singleLine = true,
                             )
+                        } else {
+                            Surface(
+                                Modifier.fillMaxWidth().clickable { searchExpanded = true },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Search clips", Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
                         }
 
                         val visibleText = state.items.filter { item -> section.includes(item) }
@@ -204,7 +234,8 @@ fun LocalUtilityScreen(
                             previews = imageState.previews,
                             loadingPreviews = imageState.loadingPreviews,
                             deviceNameFor = { deviceId ->
-                                syncState.devices.firstOrNull { it.deviceId == deviceId }?.name
+                                state.settings.deviceAliases[deviceId]
+                                    ?: syncState.devices.firstOrNull { it.deviceId == deviceId }?.name
                             },
                             canLoadMore = state.canLoadMore,
                             isLoadingMore = state.isLoadingMore,
@@ -273,9 +304,15 @@ fun LocalUtilityScreen(
         OptionsSheet(
             syncState = syncState,
             sensitiveCopy = state.settings.markCopiedTextSensitive,
-            retention = state.settings.retentionPeriod,
+            textRetention = state.settings.textRetentionPeriod,
+            imageRetention = state.settings.imageRetentionPeriod,
             onSensitiveCopy = viewModel::setSensitiveCopy,
-            onRetention = viewModel::setRetention,
+            onTextRetention = viewModel::setTextRetention,
+            onImageRetention = { period -> viewModel.setImageRetention(period); imageViewModel.applyRetention(period) },
+            onRenameDevice = syncViewModel::saveDeviceName,
+            onDeviceNameChanged = syncViewModel::updateDeviceName,
+            aliases = state.settings.deviceAliases,
+            onAliasChanged = viewModel::setDeviceAlias,
             onClear = {
                 showOptions = false
                 confirmClearHistory = true
@@ -297,7 +334,7 @@ fun LocalUtilityScreen(
     if (confirmClearHistory) {
         ConfirmDialog(
             "Clear every unbookmarked local and shared clip from this device?",
-            { viewModel.clearUnbookmarkedConfirmed(); confirmClearHistory = false },
+            { viewModel.clearUnbookmarkedConfirmed(); imageViewModel.clearUnbookmarked(); confirmClearHistory = false },
         ) { confirmClearHistory = false }
     }
     if (confirmRecoveryReset) {
@@ -313,13 +350,20 @@ private fun SyncBar(state: SyncUiState, onSync: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = if (state.status == "Connected") MaterialTheme.colorScheme.secondaryContainer
-        else MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(8.dp).background(
+                    if (state.status == "Connected") com.nishantattrey.clipsync.ui.theme.SyncSuccess
+                    else if (state.status == "Action required") MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.outline,
+                    CircleShape,
+                ),
+            )
             Text(
-                if (state.configured) "${state.status} · ${state.devices.size} devices" else "Cloud is not configured",
-                modifier = Modifier.weight(1f),
+                if (state.configured) "${state.status} · ${state.devices.size} ${if (state.devices.size == 1) "device" else "devices"}" else "Cloud is not configured",
+                modifier = Modifier.weight(1f).padding(start = 9.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
             )
@@ -444,6 +488,12 @@ private fun ClipHistory(
     val entries = (images.map(HistoryEntry::Image) + textItems.map(HistoryEntry::Text))
         .sortedByDescending(HistoryEntry::createdAtEpochMillis)
     LazyColumn(modifier.fillMaxWidth()) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent clips", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(entries.size.toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         items(entries, key = HistoryEntry::key) { entry ->
             when (entry) {
                 is HistoryEntry.Image -> {
@@ -526,13 +576,13 @@ private fun ImageClip(
                 preview != null -> Image(
                     bitmap = preview.asImageBitmap(),
                     contentDescription = image.displayName ?: "Image preview",
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(88.dp).clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop,
                 )
-                loading -> Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                loading -> Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 }
-                else -> Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                else -> Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
                     Text("Image", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -614,26 +664,33 @@ private sealed interface HistoryEntry {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OptionsSheet(
     syncState: SyncUiState,
     sensitiveCopy: Boolean,
-    retention: RetentionPeriod,
+    textRetention: RetentionPeriod,
+    imageRetention: RetentionPeriod,
     onSensitiveCopy: (Boolean) -> Unit,
-    onRetention: (RetentionPeriod) -> Unit,
+    onTextRetention: (RetentionPeriod) -> Unit,
+    onImageRetention: (RetentionPeriod) -> Unit,
+    onRenameDevice: () -> Unit,
+    onDeviceNameChanged: (String) -> Unit,
+    aliases: Map<String, String>,
+    onAliasChanged: (String, String?) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = false,
-        dragHandle = null,
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Options", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Settings", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = onDismiss) { Text("Done") }
+                }
+            }
+            item { Text("General", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+            item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Sensitive clipboard copy")
@@ -641,39 +698,75 @@ private fun OptionsSheet(
                 }
                 Switch(checked = sensitiveCopy, onCheckedChange = onSensitiveCopy)
             }
-            HorizontalDivider()
-            Text("Local retention", fontWeight = FontWeight.SemiBold)
-            RetentionPeriod.entries.forEach { period ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { onRetention(period) }.padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = retention == period, onClick = { onRetention(period) })
-                    Text(period.displayName)
+            }
+            item { HorizontalDivider() }
+            item { Text("Devices", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+            item {
+                OutlinedTextField(syncState.deviceName, onDeviceNameChanged, Modifier.fillMaxWidth(), label = { Text("This device's published name") }, singleLine = true)
+            }
+            item { Button(onClick = onRenameDevice, enabled = syncState.deviceName.isNotBlank()) { Text("Save device name") } }
+            if (syncState.devices.isEmpty()) item { Text("No other devices found", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            items(syncState.devices, key = { "device-${it.deviceId}" }) { device ->
+                OutlinedTextField(
+                    value = aliases[device.deviceId].orEmpty(),
+                    onValueChange = { onAliasChanged(device.deviceId, it.ifBlank { null }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Alias for ${device.name}") },
+                    supportingText = { Text(device.platform) },
+                    singleLine = true,
+                )
+            }
+            item { HorizontalDivider() }
+            item { Text("Data on this phone", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+            item { Text("Retention removes old unbookmarked local copies from this phone. It does not delete encrypted cloud items. Never keeps local copies until you delete them.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { RetentionChooser("Text retention", textRetention, onTextRetention) }
+            item { RetentionChooser("Image retention", imageRetention, onImageRetention) }
+            item { OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("Clear unbookmarked history on this phone") } }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+        }
+    }
+}
+
+@Composable
+private fun RetentionChooser(label: String, selected: RetentionPeriod, onSelected: (RetentionPeriod) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, fontWeight = FontWeight.Medium)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selected.displayName) }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                RetentionPeriod.entries.forEach { period ->
+                    DropdownMenuItem(text = { Text(period.displayName) }, onClick = { expanded = false; onSelected(period) })
                 }
             }
-            HorizontalDivider()
-            Text("Connected devices", fontWeight = FontWeight.SemiBold)
-            if (syncState.devices.isEmpty()) Text("No device profiles loaded", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            syncState.devices.forEach { Text("${it.name} · ${it.platform}") }
-            OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("Clear unbookmarked local history") }
         }
     }
 }
 
 @Composable
 private fun ImageViewer(name: String, bitmap: Bitmap, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(), contentDescription = name,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 620.dp), contentScale = ContentScale.Fit,
-                )
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.scrim) {
+            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(name, Modifier.weight(1f), color = MaterialTheme.colorScheme.inverseOnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     TextButton(onClick = onDismiss) { Text("Close") }
                 }
+                Image(
+                    bitmap = bitmap.asImageBitmap(), contentDescription = name,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                        .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset = if (scale == 1f) Offset.Zero else offset + pan
+                            }
+                        },
+                    contentScale = ContentScale.Fit,
+                )
             }
         }
     }

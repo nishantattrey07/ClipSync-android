@@ -2,13 +2,8 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/splash_background" />
     <item
-        android:width="144dp"
-        android:height="144dp"
-        android:gravity="center">
-        <bitmap
-            android:antialias="true"
-            android:filter="true"
-            android:gravity="fill"
-            android:src="@drawable/clipsync_mark" />
-    </item>
+        android:width="96dp"
+        android:height="96dp"
+        android:drawable="@drawable/clipsync_brand_mark"
+        android:gravity="center" />
 </layer-list>

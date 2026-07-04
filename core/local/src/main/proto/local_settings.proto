@@ -22,4 +22,6 @@ enum ClipboardSensitivityProto {
 message LocalSettingsProto {
   RetentionPeriodProto text_retention = 1;
   ClipboardSensitivityProto copy_back_sensitivity = 2;
+  RetentionPeriodProto image_retention = 3;
+  map<string, string> device_aliases = 4;
 }

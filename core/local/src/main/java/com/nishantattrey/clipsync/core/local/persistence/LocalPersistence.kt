@@ -261,6 +261,12 @@ interface SyncPersistenceDao {
     @Query("SELECT * FROM local_images ORDER BY created_at_epoch_millis DESC, item_id DESC")
     fun observeLocalImages(): Flow<List<LocalImageEntity>>
 
+    @Query("SELECT * FROM local_images WHERE is_bookmarked = 0 AND NOT EXISTS (SELECT 1 FROM outbound_image_queue WHERE outbound_image_queue.item_id = local_images.item_id AND state IN ('prepared', 'object_uploaded', 'retry'))")
+    suspend fun unbookmarkedDeletableImages(): List<LocalImageEntity>
+
+    @Query("SELECT * FROM local_images WHERE is_bookmarked = 0 AND created_at_epoch_millis < :cutoff AND NOT EXISTS (SELECT 1 FROM outbound_image_queue WHERE outbound_image_queue.item_id = local_images.item_id AND state IN ('prepared', 'object_uploaded', 'retry'))")
+    suspend fun unbookmarkedDeletableImagesOlderThan(cutoff: Long): List<LocalImageEntity>
+
     @Query("UPDATE local_images SET cloud_sync_state = :state WHERE item_id = :itemId")
     suspend fun setLocalImageCloudState(itemId: String, state: String): Int
 

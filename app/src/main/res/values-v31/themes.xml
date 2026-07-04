@@ -2,7 +2,7 @@
 <resources>
     <style name="Theme.Clipsync.Starting" parent="Theme.Clipsync">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/clipsync_mark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/clipsync_brand_mark</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
     </style>
 </resources>

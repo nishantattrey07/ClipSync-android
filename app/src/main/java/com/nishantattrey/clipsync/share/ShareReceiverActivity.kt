@@ -61,7 +61,10 @@ class ShareReceiverActivity : ComponentActivity() {
         setContent {
             ClipsyncTheme {
                 ShareDestinationScreen(
-                    kind = if (payload is SharedPayload.Image) "image" else "text",
+                    kind = when (payload) {
+                        is SharedPayload.Images -> if (payload.uris.size == 1) "image" else "${payload.uris.size} images"
+                        is SharedPayload.Text -> "text"
+                    },
                     busy = busy,
                     error = error,
                     onLocal = { save(payload, upload = false) },
@@ -79,7 +82,7 @@ class ShareReceiverActivity : ComponentActivity() {
             error = null
             runCatching {
                 when (payload) {
-                    is SharedPayload.Image -> imageCapture.capture(payload.uri, upload)
+                    is SharedPayload.Images -> payload.uris.take(20).forEach { imageCapture.capture(it, upload) }
                     is SharedPayload.Text -> saveText(payload.value, upload)
                 }
             }.onSuccess {
@@ -90,7 +93,7 @@ class ShareReceiverActivity : ComponentActivity() {
                 finish()
             }.onFailure {
                 busy = false
-                error = if (payload is SharedPayload.Image) {
+                error = if (payload is SharedPayload.Images) {
                     "This image could not be decoded or saved."
                 } else {
                     "This text could not be saved."
@@ -112,15 +115,19 @@ class ShareReceiverActivity : ComponentActivity() {
 }
 
 private sealed interface SharedPayload {
-    data class Image(val uri: Uri) : SharedPayload
+    data class Images(val uris: List<Uri>) : SharedPayload
     data class Text(val value: String) : SharedPayload
 }
 
 @Suppress("DEPRECATION")
 private fun extractPayload(intent: Intent): SharedPayload? {
+    if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+        val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        return uris.takeIf { it.isNotEmpty() }?.let(SharedPayload::Images)
+    }
     if (intent.action != Intent.ACTION_SEND) return null
     val uri = intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
-    if (uri != null) return SharedPayload.Image(uri)
+    if (uri != null) return SharedPayload.Images(listOf(uri))
     val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
     return text?.let { SharedPayload.Text(it) }
 }

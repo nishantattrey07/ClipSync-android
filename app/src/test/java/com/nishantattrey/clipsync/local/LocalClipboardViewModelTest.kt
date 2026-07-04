@@ -127,8 +127,18 @@ private class ViewModelRepository : LocalClipboardRepository {
 private class ViewModelSettingsRepository : LocalSettingsRepository {
     private val mutableSettings = MutableStateFlow(LocalSettings())
     override val settings: Flow<LocalSettings> = mutableSettings
-    override suspend fun setRetentionPeriod(period: RetentionPeriod) {
-        mutableSettings.value = mutableSettings.value.copy(retentionPeriod = period)
+    override suspend fun setTextRetentionPeriod(period: RetentionPeriod) {
+        mutableSettings.value = mutableSettings.value.copy(textRetentionPeriod = period)
+    }
+    override suspend fun setImageRetentionPeriod(period: RetentionPeriod) {
+        mutableSettings.value = mutableSettings.value.copy(imageRetentionPeriod = period)
+    }
+    override suspend fun setDeviceAlias(deviceId: String, alias: String?) {
+        mutableSettings.value = mutableSettings.value.copy(
+            deviceAliases = mutableSettings.value.deviceAliases.toMutableMap().apply {
+                if (alias == null) remove(deviceId) else put(deviceId, alias)
+            },
+        )
     }
     override suspend fun setMarkCopiedTextSensitive(enabled: Boolean) {
         mutableSettings.value = mutableSettings.value.copy(markCopiedTextSensitive = enabled)

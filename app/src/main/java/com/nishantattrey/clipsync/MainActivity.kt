@@ -7,7 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
 import com.nishantattrey.clipsync.local.LocalClipboardViewModel
 import com.nishantattrey.clipsync.local.LocalUtilityScreen
 import com.nishantattrey.clipsync.platform.ActivityFocusState
@@ -30,8 +30,8 @@ class MainActivity : ComponentActivity() {
     private val imageViewModel: ImageCaptureViewModel by viewModels()
     private var pendingImageUpload = true
     private var openShared by mutableStateOf(true)
-    private val imagePicker = registerForActivityResult(PickVisualMedia()) { uri ->
-        uri?.let { imageViewModel.capture(it, pendingImageUpload) }
+    private val imagePicker = registerForActivityResult(PickMultipleVisualMedia(maxItems = 20)) { uris ->
+        if (uris.isNotEmpty()) imageViewModel.capture(uris, pendingImageUpload)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
             ClipsyncTheme {
                 LocalUtilityScreen(viewModel, syncViewModel, imageViewModel, openShared) { upload ->
                     pendingImageUpload = upload
-                    imagePicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
+                    imagePicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
             }
         }

@@ -56,7 +56,7 @@ class LocalClipboardViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.settings.collectLatest { settings ->
                 mutableState.update { it.copy(settings = settings) }
-                repository.applyRetention(settings.retentionPeriod)
+                repository.applyRetention(settings.textRetentionPeriod)
             }
         }
         viewModelScope.launch {
@@ -142,9 +142,17 @@ class LocalClipboardViewModel @Inject constructor(
         settingsRepository.setMarkCopiedTextSensitive(enabled)
     }
 
-    fun setRetention(period: RetentionPeriod) = viewModelScope.launch {
-        settingsRepository.setRetentionPeriod(period)
+    fun setTextRetention(period: RetentionPeriod) = viewModelScope.launch {
+        settingsRepository.setTextRetentionPeriod(period)
         repository.applyRetention(period)
+    }
+
+    fun setImageRetention(period: RetentionPeriod) = viewModelScope.launch {
+        settingsRepository.setImageRetentionPeriod(period)
+    }
+
+    fun setDeviceAlias(deviceId: String, alias: String?) = viewModelScope.launch {
+        settingsRepository.setDeviceAlias(deviceId, alias)
     }
 
     fun loadMore() {

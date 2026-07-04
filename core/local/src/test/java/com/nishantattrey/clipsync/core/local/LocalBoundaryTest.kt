@@ -36,7 +36,9 @@ class LocalBoundaryTest {
     @Test fun `settings proto round trip preserves explicit non-default values`() = runTest {
         val expected = LocalSettingsProto.newBuilder()
             .setTextRetention(RetentionPeriodProto.RETENTION_PERIOD_SEVEN_DAYS)
+            .setImageRetention(RetentionPeriodProto.RETENTION_PERIOD_THIRTY_DAYS)
             .setCopyBackSensitivity(ClipboardSensitivityProto.CLIPBOARD_SENSITIVITY_STANDARD)
+            .putDeviceAliases("00000000-0000-0000-0000-000000000001", "Work Mac")
             .build()
         val output = ByteArrayOutputStream()
         LocalSettingsSerializer.writeTo(expected, output)
