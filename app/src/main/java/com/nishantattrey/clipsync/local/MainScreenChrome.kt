@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.nishantattrey.clipsync.R
@@ -94,7 +96,12 @@ internal fun ConnectionUtility(
                 TextButton(onClick = onSettings) { Text("Settings") }
             } else if (syncing) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .semantics { contentDescription = "Syncing" },
+                        strokeWidth = 2.dp
+                    )
                 }
             } else {
                 IconButton(onClick = onSync) {
@@ -113,11 +120,14 @@ internal fun PersistentClipSearch(query: String, onQueryChange: (String) -> Unit
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+                    .semantics { contentDescription = "Search clips" },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
@@ -177,7 +187,7 @@ internal fun ClipBottomNavigation(section: HistorySection, onSection: (HistorySe
                                 HistorySection.SHARED -> Icons.Default.Share
                                 HistorySection.BOOKMARKS -> Icons.Default.Favorite
                             },
-                            contentDescription = null,
+                            contentDescription = destination.title,
                             modifier = Modifier.size(24.dp),
                             tint = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                         )

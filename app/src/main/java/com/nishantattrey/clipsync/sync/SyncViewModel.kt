@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.nishantattrey.clipsync.platform.AndroidImageContentService
 
 data class SyncUiState(
     val configured: Boolean = false,
@@ -42,6 +43,7 @@ class SyncViewModel @Inject constructor(
     private val keyDeriver: KeyDeriver,
     private val coordinator: CloudSyncCoordinator,
     private val identityStore: DeviceIdentityStore,
+    private val imageContentService: AndroidImageContentService,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SyncUiState())
     val state: StateFlow<SyncUiState> = mutableState.asStateFlow()
@@ -70,6 +72,7 @@ class SyncViewModel @Inject constructor(
 
     fun disconnect() = viewModelScope.launch {
         mutableState.update { it.copy(isBusy = true) }
+        imageContentService.clearCachedKeys()
         configurations.clear()
         mutableState.update {
             it.copy(

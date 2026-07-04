@@ -41,6 +41,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import com.nishantattrey.clipsync.core.sync.engine.TextSyncEngineFactory
+import com.nishantattrey.clipsync.core.sync.engine.ImageSyncEngineFactory
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -81,6 +83,37 @@ object SyncModule {
         coordinator,
     )
 
+
+    @Provides @Singleton fun textSyncEngineFactory(
+        store: LocalStore,
+        local: LocalClipboardRepository,
+        preparedImages: PreparedImageStore,
+        imageProcessor: ImageProcessor,
+    ): TextSyncEngineFactory {
+        val encryption = JcaAesGcm()
+        val queue = SyncQueueStore(store.database)
+        return TextSyncEngineFactory { transport ->
+            TextSyncEngine(
+                transport, queue, local, encryption, Clock(System::currentTimeMillis),
+                ImageInboundHandler(store.database, transport, preparedImages, imageProcessor, encryption, queue),
+            )
+        }
+    }
+
+    @Provides @Singleton fun imageSyncEngineFactory(
+        store: LocalStore,
+        preparedImages: PreparedImageStore,
+        imageProcessor: ImageProcessor,
+    ): ImageSyncEngineFactory {
+        val encryption = JcaAesGcm()
+        return ImageSyncEngineFactory { transport ->
+            ImageSyncEngine(
+                store.database, transport, preparedImages, imageProcessor, encryption,
+                Clock(System::currentTimeMillis),
+            )
+        }
+    }
+
     @Provides @Singleton fun coordinator(
         @ApplicationContext context: Context,
         configuration: CloudConfigurationStore,
@@ -89,31 +122,21 @@ object SyncModule {
         keyDeriver: KeyDeriver,
         store: LocalStore,
         local: LocalClipboardRepository,
-        preparedImages: PreparedImageStore,
-        imageProcessor: ImageProcessor,
+        textSyncEngineFactory: TextSyncEngineFactory,
+        imageSyncEngineFactory: ImageSyncEngineFactory,
     ): CloudSyncCoordinator {
         val encryption = JcaAesGcm()
-        val queue = SyncQueueStore(store.database)
         return CloudSyncCoordinator(
             configurationStore = configuration,
             identityStore = identity,
             transportFactory = transportFactory,
             keyDeriver = keyDeriver,
             profileCodec = DeviceProfileCodec(encryption),
-            database = store.database,
+            localDao = store.database.localClipboardDao(),
+            syncPersistenceDao = store.database.syncPersistenceDao(),
             local = local,
-            engineFactory = { transport ->
-                TextSyncEngine(
-                    transport, queue, local, encryption, Clock(System::currentTimeMillis),
-                    ImageInboundHandler(store.database, transport, preparedImages, imageProcessor, encryption, queue),
-                )
-            },
-            imageEngineFactory = { transport ->
-                ImageSyncEngine(
-                    store.database, transport, preparedImages, imageProcessor, encryption,
-                    Clock(System::currentTimeMillis),
-                )
-            },
+            engineFactory = textSyncEngineFactory,
+            imageEngineFactory = imageSyncEngineFactory,
             appVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown",
         )
     }

@@ -5,6 +5,8 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -332,7 +334,10 @@ fun LocalUtilityScreen(
 
 @Composable
 private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text("Connect to ClipSync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(state.supabaseUrl, viewModel::updateUrl, Modifier.fillMaxWidth(), label = { Text("Supabase URL") }, singleLine = true)
         OutlinedTextField(state.publishableKey, viewModel::updateKey, Modifier.fillMaxWidth(), label = { Text("Public anonymous key") }, singleLine = true)
@@ -438,7 +443,7 @@ private fun QuickImportCard(
         ) {
             Icon(
                 painter = painterResource(iconResId),
-                contentDescription = null,
+                contentDescription = title,
                 tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
                 modifier = Modifier.size(28.dp)
             )
@@ -619,8 +624,10 @@ private fun ClipHistory(
     onBookmarkText: (LocalClipboardItem) -> Unit,
     onDeleteText: (LocalClipboardItem) -> Unit,
 ) {
-    val entries = (images.map(HistoryEntry::Image) + textItems.map(HistoryEntry::Text))
-        .sortedByDescending(HistoryEntry::createdAtEpochMillis)
+    val entries = remember(images, textItems) {
+        (images.map(HistoryEntry::Image) + textItems.map(HistoryEntry::Text))
+            .sortedByDescending(HistoryEntry::createdAtEpochMillis)
+    }
     LazyColumn(modifier.fillMaxWidth(), state = listState) {
         items(entries, key = HistoryEntry::key) { entry ->
             when (entry) {
@@ -646,7 +653,7 @@ private fun ClipHistory(
                     TextClip(
                         item = item,
                         onCopy = { onCopyText(item) },
-                        onUpload = if (item.cloudSyncState == "local") ({ onUploadText(item) }) else null,
+                        onUpload = if (item.cloudSyncState in setOf("local", "failed")) ({ onUploadText(item) }) else null,
                         onBookmark = { onBookmarkText(item) },
                         onDelete = { onDeleteText(item) },
                     )
@@ -777,7 +784,10 @@ private fun TextClip(
                     Icon(Icons.Default.MoreVert, contentDescription = "Text actions")
                 }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                    onUpload?.let { DropdownMenuItem(text = { Text("Encrypt & share") }, onClick = { more = false; it() }) }
+                    onUpload?.let {
+                        val label = if (item.cloudSyncState == "failed") "Retry upload" else "Encrypt & share"
+                        DropdownMenuItem(text = { Text(label) }, onClick = { more = false; it() })
+                    }
                     DropdownMenuItem(text = { Text(if (item.isBookmarked) "Remove bookmark" else "Bookmark") }, onClick = { more = false; onBookmark() })
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
                 }
@@ -790,7 +800,7 @@ private fun TextClip(
 private fun ClipStatusIcon(state: String) {
     val presentation = when (state) {
         "synced", "received" -> Triple(R.drawable.ic_status_synced, SyncSuccess, "Synced")
-        "queued", "prepared", "retrying", "retry" -> Triple(R.drawable.ic_status_queued, SyncWarning, "Waiting to upload")
+        "queued", "prepared", "retrying", "retry", "upload_pending", "object_uploaded" -> Triple(R.drawable.ic_status_queued, SyncWarning, "Waiting to upload")
         "failed" -> Triple(R.drawable.ic_status_failed, SyncFailure, "Upload failed")
         else -> null
     }
@@ -1203,11 +1213,12 @@ private val RetentionPeriod.displayName: String
 
 private fun imageStateLabel(state: String): String = when (state) {
     "local" -> "Local only"
-    "queued", "prepared" -> "Waiting to upload"
+    "queued", "prepared", "upload_pending" -> "Waiting to upload"
     "retrying", "retry" -> "Upload retrying"
     "received" -> "From cloud"
     "synced" -> "Shared"
     "failed" -> "Upload failed"
+    "object_uploaded" -> "Upload finishing"
     else -> state.replace('_', ' ')
 }
 
@@ -1228,7 +1239,8 @@ private fun imageSourceAndTimeLabel(image: LocalImageEntity, sourceLabel: String
 private fun textStateLabel(item: LocalClipboardItem): String = when {
     item.captureSource == CaptureSource.CLOUD -> "From cloud"
     item.cloudSyncState == "synced" -> "Shared from this device"
-    item.cloudSyncState == "queued" -> "Waiting to upload"
+    item.cloudSyncState in setOf("queued", "upload_pending", "prepared") -> "Waiting to upload"
+    item.cloudSyncState == "retrying" -> "Retrying upload"
     item.cloudSyncState == "failed" -> "Upload needs attention"
     else -> "Local only"
 }

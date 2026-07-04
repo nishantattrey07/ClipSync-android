@@ -131,6 +131,14 @@ class AndroidImageContentService @Inject constructor(
         hmacKey = hmacKey.copyOf(),
     )
 
+    suspend fun clearCachedKeys() = channelKeyMutex.withLock {
+        cachedChannelKeys?.let { keys ->
+            keys.encryptionKey.fill(0)
+            keys.hmacKey.fill(0)
+        }
+        cachedChannelKeys = null
+    }
+
     private companion object {
         const val SHARE_FILE_LIFETIME_MILLIS = 10 * 60 * 1_000L
     }
