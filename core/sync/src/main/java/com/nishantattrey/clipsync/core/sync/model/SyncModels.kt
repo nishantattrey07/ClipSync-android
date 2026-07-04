@@ -68,13 +68,33 @@ interface CloudConfigurationStore {
     suspend fun clear()
 }
 
-data class CloudConfiguration(
+class CloudConfiguration(
     val endpoint: CloudEndpoint,
     val channelId: String,
     val channelPassword: CharArray,
     val deviceName: String,
 ) {
     fun clearSensitive() = channelPassword.fill('\u0000')
+
+    override fun toString(): String =
+        "CloudConfiguration(endpoint=$endpoint, channelId=$channelId, deviceName=$deviceName, channelPassword=***)"
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is CloudConfiguration) return false
+        return endpoint == other.endpoint &&
+            channelId == other.channelId &&
+            channelPassword.contentEquals(other.channelPassword) &&
+            deviceName == other.deviceName
+    }
+
+    override fun hashCode(): Int {
+        var result = endpoint.hashCode()
+        result = 31 * result + channelId.hashCode()
+        result = 31 * result + channelPassword.contentHashCode()
+        result = 31 * result + deviceName.hashCode()
+        return result
+    }
 }
 
 interface DeviceIdentityStore {

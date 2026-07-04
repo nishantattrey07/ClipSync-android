@@ -186,7 +186,7 @@ class SupabaseRestTransport(
         fun defaultHttpClient(): HttpClient = HttpClient(OkHttp) {
             expectSuccess = false
             install(ContentNegotiation) {
-                json(Json { ignoreUnknownKeys = false; explicitNulls = true })
+                json(Json { ignoreUnknownKeys = true; explicitNulls = true })
             }
         }
     }

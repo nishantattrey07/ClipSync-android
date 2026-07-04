@@ -1,10 +1,12 @@
 package com.nishantattrey.clipsync.core.protocol.crypto
 
-data class DerivedKeys(
+class DerivedKeys(
     val channelId: String,
     val encryptionKey: ByteArray,
     val hmacKey: ByteArray,
 ) {
+    override fun toString(): String = "DerivedKeys(channelId=$channelId)"
+
     override fun equals(other: Any?): Boolean = other is DerivedKeys &&
         channelId == other.channelId &&
         encryptionKey.contentEquals(other.encryptionKey) &&
