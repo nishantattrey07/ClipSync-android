@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.text.format.DateUtils
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
@@ -19,23 +18,22 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,20 +45,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +79,9 @@ import com.nishantattrey.clipsync.core.local.persistence.LocalImageEntity
 import com.nishantattrey.clipsync.sync.ImageCaptureViewModel
 import com.nishantattrey.clipsync.sync.SyncUiState
 import com.nishantattrey.clipsync.sync.SyncViewModel
+import com.nishantattrey.clipsync.ui.theme.SyncFailure
+import com.nishantattrey.clipsync.ui.theme.SyncSuccess
+import com.nishantattrey.clipsync.ui.theme.SyncWarning
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,15 +96,18 @@ fun LocalUtilityScreen(
     val syncState by syncViewModel.state.collectAsStateWithLifecycle()
     val imageState by imageViewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var section by remember { mutableStateOf(if (openShared) HistorySection.SHARED else HistorySection.LOCAL) }
+    var section by rememberSaveable { mutableStateOf(if (openShared) HistorySection.SHARED else HistorySection.LOCAL) }
     var showNewClip by remember { mutableStateOf(false) }
-    var searchExpanded by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     var pendingTextDelete by remember { mutableStateOf<String?>(null) }
     var pendingImageDelete by remember { mutableStateOf<LocalImageEntity?>(null) }
     var confirmClearHistory by remember { mutableStateOf(false) }
+    var confirmDisconnect by remember { mutableStateOf(false) }
     var confirmRecoveryReset by remember { mutableStateOf(false) }
     var viewedImage by remember { mutableStateOf<Pair<String, Bitmap>?>(null) }
+    val localListState = rememberLazyListState()
+    val sharedListState = rememberLazyListState()
+    val bookmarksListState = rememberLazyListState()
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.dismissMessage() }
@@ -125,65 +124,30 @@ fun LocalUtilityScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Image(painterResource(R.drawable.clipsync_brand_mark), contentDescription = null, modifier = Modifier.size(36.dp))
-                        Column {
-                            Text("ClipSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            if (syncState.configured) Text(section.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                actions = {
-                    if (syncState.configured) {
-                        IconButton(onClick = { searchExpanded = !searchExpanded }) {
-                            Icon(Icons.Default.Search, contentDescription = if (searchExpanded) "Close search" else "Search clips")
-                        }
-                    }
-                    IconButton(onClick = { showOptions = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Open settings")
-                    }
-                },
-            )
+            ClipSyncTopBar(onSettings = { showOptions = true })
         },
         bottomBar = {
             if (syncState.configured && state.recovery == LocalRecoveryState.Ready) {
-                NavigationBar {
-                    HistorySection.entries.forEach { destination ->
-                        NavigationBarItem(
-                            selected = section == destination,
-                            onClick = { section = destination },
-                            icon = {
-                                Icon(
-                                    imageVector = when (destination) {
-                                        HistorySection.LOCAL -> Icons.Default.Home
-                                        HistorySection.SHARED -> Icons.Default.Share
-                                        HistorySection.BOOKMARKS -> Icons.Default.Favorite
-                                    },
-                                    contentDescription = null,
-                                )
-                            },
-                            label = { Text(destination.title) },
-                        )
-                    }
-                }
+                ClipBottomNavigation(section = section, onSection = { section = it })
             }
         },
         floatingActionButton = {
             if (syncState.configured && state.recovery == LocalRecoveryState.Ready) {
-                FloatingActionButton(onClick = { showNewClip = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "New clip")
-                }
+                NewClipFab(onClick = { showNewClip = true })
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SyncBar(syncState, syncViewModel::synchronize)
+            ConnectionUtility(
+                presentation = connectionPresentation(syncState, System.currentTimeMillis()),
+                syncing = syncState.isBusy,
+                onSync = syncViewModel::synchronize,
+                onSettings = { showOptions = true },
+            )
 
             when (state.recovery) {
                 is LocalRecoveryState.TemporarilyUnavailable -> RecoveryPanel(
@@ -198,26 +162,7 @@ fun LocalUtilityScreen(
                     }
 
                     if (syncState.configured) {
-                        if (searchExpanded) {
-                            OutlinedTextField(
-                                value = state.query,
-                                onValueChange = viewModel::setQuery,
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("Search clips") },
-                                singleLine = true,
-                            )
-                        } else {
-                            Surface(
-                                Modifier.fillMaxWidth().clickable { searchExpanded = true },
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainer,
-                            ) {
-                                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("Search clips", Modifier.padding(start = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
+                        PersistentClipSearch(query = state.query, onQueryChange = viewModel::setQuery)
 
                         val visibleText = state.items.filter { item -> section.includes(item) }
                         val visibleImages = imageState.images.filter { image ->
@@ -226,8 +171,15 @@ fun LocalUtilityScreen(
                             )
                         }
 
+                        val visibleCount = visibleText.size + visibleImages.size
+                        ClipSectionHeader(section = section, count = visibleCount)
                         ClipHistory(
                             modifier = Modifier.weight(1f),
+                            listState = when (section) {
+                                HistorySection.LOCAL -> localListState
+                                HistorySection.SHARED -> sharedListState
+                                HistorySection.BOOKMARKS -> bookmarksListState
+                            },
                             section = section,
                             textItems = visibleText,
                             images = visibleImages,
@@ -317,6 +269,10 @@ fun LocalUtilityScreen(
                 showOptions = false
                 confirmClearHistory = true
             },
+            onDisconnect = {
+                showOptions = false
+                confirmDisconnect = true
+            },
             onDismiss = { showOptions = false },
         )
     }
@@ -337,42 +293,17 @@ fun LocalUtilityScreen(
             { viewModel.clearUnbookmarkedConfirmed(); imageViewModel.clearUnbookmarked(); confirmClearHistory = false },
         ) { confirmClearHistory = false }
     }
+    if (confirmDisconnect) {
+        ConfirmDialog(
+            "Disconnect from the current ClipSync channel and clear configuration?",
+            { syncViewModel.disconnect(); confirmDisconnect = false },
+        ) { confirmDisconnect = false }
+    }
     if (confirmRecoveryReset) {
         ConfirmDialog(
             "Permanently reset encrypted local history and bookmarks?",
             { viewModel.resetEncryptedHistoryConfirmed(); confirmRecoveryReset = false },
         ) { confirmRecoveryReset = false }
-    }
-}
-
-@Composable
-private fun SyncBar(state: SyncUiState, onSync: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(8.dp).background(
-                    if (state.status == "Connected") com.nishantattrey.clipsync.ui.theme.SyncSuccess
-                    else if (state.status == "Action required") MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.outline,
-                    CircleShape,
-                ),
-            )
-            Text(
-                if (state.configured) "${state.status} · ${state.devices.size} ${if (state.devices.size == 1) "device" else "devices"}" else "Cloud is not configured",
-                modifier = Modifier.weight(1f).padding(start = 9.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-            )
-            if (state.configured) {
-                TextButton(onClick = onSync, enabled = !state.isBusy) {
-                    Text(if (state.isBusy) "Refreshing" else "Sync now")
-                }
-            }
-        }
     }
 }
 
@@ -407,55 +338,56 @@ private fun NewClipSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var shareDestination by rememberSaveable { mutableStateOf(true) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("New clip", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !shareDestination,
+                    onClick = { shareDestination = false },
+                    label = { Text("Local") },
+                    leadingIcon = if (!shareDestination) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    } else null,
+                    modifier = Modifier.weight(1f),
+                )
+                FilterChip(
+                    selected = shareDestination,
+                    onClick = { shareDestination = true },
+                    label = { Text("Shared") },
+                    leadingIcon = if (shareDestination) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    } else null,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             OutlinedTextField(
                 value = text, onValueChange = onTextChanged, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Type or paste text") }, minLines = 3, maxLines = 6,
             )
-            DestinationActions(
-                localLabel = "Save locally",
-                sharedLabel = "Encrypt & share",
-                localEnabled = text.isNotEmpty(),
-                sharedEnabled = text.isNotEmpty(),
-                onLocal = onSaveText,
-                onShared = onShareText,
-            )
-            HorizontalDivider()
-            Text("Clipboard", style = MaterialTheme.typography.titleSmall)
-            DestinationActions("Import locally", "Import & share", onLocal = onImportLocal, onShared = onImportShared)
-            HorizontalDivider()
-            Text("Image", style = MaterialTheme.typography.titleSmall)
-            DestinationActions(
-                "Save image", "Share image",
-                localEnabled = !imageBusy,
-                sharedEnabled = !imageBusy,
-                onLocal = onImageLocal,
-                onShared = onImageShared,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DestinationActions(
-    localLabel: String,
-    sharedLabel: String,
-    localEnabled: Boolean = true,
-    sharedEnabled: Boolean = true,
-    onLocal: () -> Unit,
-    onShared: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onLocal, enabled = localEnabled, modifier = Modifier.weight(1f)) {
-            Text(localLabel)
-        }
-        Button(onClick = onShared, enabled = sharedEnabled, modifier = Modifier.weight(1f)) {
-            Text(sharedLabel)
+            Button(
+                onClick = if (shareDestination) onShareText else onSaveText,
+                enabled = text.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (shareDestination) "Encrypt & share text" else "Save text locally")
+            }
+            Text("Add from", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = if (shareDestination) onImportShared else onImportLocal,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Clipboard") }
+                OutlinedButton(
+                    onClick = if (shareDestination) onImageShared else onImageLocal,
+                    enabled = !imageBusy,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Images") }
+            }
         }
     }
 }
@@ -463,6 +395,7 @@ private fun DestinationActions(
 @Composable
 private fun ClipHistory(
     modifier: Modifier = Modifier,
+    listState: LazyListState,
     section: HistorySection,
     textItems: List<LocalClipboardItem>,
     images: List<LocalImageEntity>,
@@ -487,13 +420,7 @@ private fun ClipHistory(
 ) {
     val entries = (images.map(HistoryEntry::Image) + textItems.map(HistoryEntry::Text))
         .sortedByDescending(HistoryEntry::createdAtEpochMillis)
-    LazyColumn(modifier.fillMaxWidth()) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Recent clips", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(entries.size.toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+    LazyColumn(modifier.fillMaxWidth(), state = listState) {
         items(entries, key = HistoryEntry::key) { entry ->
             when (entry) {
                 is HistoryEntry.Image -> {
@@ -530,9 +457,9 @@ private fun ClipHistory(
             item {
                 Text(
                     when (section) {
-                        HistorySection.SHARED -> "Nothing shared yet. Use Text, Import, or Image above."
-                        HistorySection.LOCAL -> "No local-only clips."
-                        HistorySection.BOOKMARKS -> "No bookmarked clips."
+                        HistorySection.SHARED -> "Nothing shared yet. Tap + to send a clip."
+                        HistorySection.LOCAL -> "No clips saved on this phone."
+                        HistorySection.BOOKMARKS -> "No bookmarks yet."
                     },
                     modifier = Modifier.padding(vertical = 28.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -568,7 +495,7 @@ private fun ImageClip(
     LaunchedEffect(image.itemId, image.encryptedFileName) { loadPreview() }
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onView).padding(vertical = 8.dp),
+            Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable(onClick = onView).padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -576,24 +503,32 @@ private fun ImageClip(
                 preview != null -> Image(
                     bitmap = preview.asImageBitmap(),
                     contentDescription = image.displayName ?: "Image preview",
-                    modifier = Modifier.size(88.dp).clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop,
                 )
-                loading -> Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+                loading -> Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                 }
-                else -> Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
+                else -> Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                     Text("Image", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(image.displayName ?: "Image", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(image.displayName ?: "Image", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${image.width} × ${image.height} · $sourceLabel",
-                    style = MaterialTheme.typography.bodySmall,
+                    "${image.width} × ${image.height}",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    imageSourceAndTimeLabel(image, sourceLabel),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            ClipStatusIcon(image.cloudSyncState)
             IconButton(onClick = onCopy) {
                 Icon(painterResource(R.drawable.ic_copy), contentDescription = "Copy image")
             }
@@ -623,15 +558,16 @@ private fun TextClip(
 ) {
     var more by remember { mutableStateOf(false) }
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(item.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.text, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     "${textStateLabel(item)} · ${relativeTime(item.createdAtEpochMillis)}",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            ClipStatusIcon(item.cloudSyncState)
             IconButton(onClick = onCopy) {
                 Icon(painterResource(R.drawable.ic_copy), contentDescription = "Copy text")
             }
@@ -645,6 +581,26 @@ private fun TextClip(
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ClipStatusIcon(state: String) {
+    val presentation = when (state) {
+        "synced", "received" -> Triple(R.drawable.ic_status_synced, SyncSuccess, "Synced")
+        "queued", "prepared", "retrying", "retry" -> Triple(R.drawable.ic_status_queued, SyncWarning, "Waiting to upload")
+        "failed" -> Triple(R.drawable.ic_status_failed, SyncFailure, "Upload failed")
+        else -> null
+    }
+    Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+        presentation?.let { (icon, color, description) ->
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = description,
+                modifier = Modifier.size(20.dp),
+                tint = color,
+            )
         }
     }
 }
@@ -678,6 +634,7 @@ private fun OptionsSheet(
     aliases: Map<String, String>,
     onAliasChanged: (String, String?) -> Unit,
     onClear: () -> Unit,
+    onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -722,6 +679,17 @@ private fun OptionsSheet(
             item { RetentionChooser("Text retention", textRetention, onTextRetention) }
             item { RetentionChooser("Image retention", imageRetention, onImageRetention) }
             item { OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("Clear unbookmarked history on this phone") } }
+            if (syncState.configured) {
+                item { HorizontalDivider() }
+                item { Text("Connection", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Supabase URL", style = MaterialTheme.typography.titleSmall)
+                        Text(syncState.supabaseUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                item { OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Disconnect from this channel") } }
+            }
             item { Spacer(Modifier.height(24.dp)) }
         }
         }
@@ -792,7 +760,7 @@ private fun ConfirmDialog(text: String, confirm: () -> Unit, dismiss: () -> Unit
     )
 }
 
-private enum class HistorySection(val title: String) {
+internal enum class HistorySection(val title: String) {
     LOCAL("Local"), SHARED("Shared"), BOOKMARKS("Bookmarks");
 
     fun includes(item: LocalClipboardItem): Boolean = when (this) {
@@ -832,6 +800,14 @@ private fun imageSourceLabel(image: LocalImageEntity, deviceNameFor: (String) ->
     if (image.cloudSyncState != "received") return imageStateLabel(image.cloudSyncState)
     val sender = image.senderDeviceId?.let(deviceNameFor)
     return if (sender.isNullOrBlank()) "From another device" else "From $sender"
+}
+
+private fun imageSourceAndTimeLabel(image: LocalImageEntity, sourceLabel: String): String {
+    val time = relativeTime(image.createdAtEpochMillis)
+    return when (image.cloudSyncState) {
+        "received", "local" -> "$sourceLabel · $time"
+        else -> time
+    }
 }
 
 private fun textStateLabel(item: LocalClipboardItem): String = when {

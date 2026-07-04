@@ -30,6 +30,7 @@ data class SyncUiState(
     val devices: List<SyncedDevice> = emptyList(),
     val lastUploaded: Int = 0,
     val lastReceived: Int = 0,
+    val lastSuccessfulSyncAtEpochMillis: Long? = null,
     val error: String? = null,
 )
 
@@ -48,15 +49,37 @@ class SyncViewModel @Inject constructor(
             val loaded = runCatching { configurations.load() }.getOrNull()
             val configured = loaded != null
             val deviceName = loaded?.deviceName ?: state.value.deviceName
+            val url = loaded?.endpoint?.supabaseUrl ?: ""
             loaded?.clearSensitive()
             mutableState.update {
                 it.copy(
                     configured = configured,
                     status = if (configured) "Offline" else "Unconfigured",
                     deviceName = deviceName,
+                    supabaseUrl = url,
                 )
             }
             if (configured) synchronize()
+        }
+    }
+
+    fun disconnect() = viewModelScope.launch {
+        mutableState.update { it.copy(isBusy = true) }
+        configurations.clear()
+        mutableState.update {
+            it.copy(
+                configured = false,
+                status = "Unconfigured",
+                isBusy = false,
+                supabaseUrl = "",
+                publishableKey = "",
+                channelSecret = "",
+                devices = emptyList(),
+                lastUploaded = 0,
+                lastReceived = 0,
+                lastSuccessfulSyncAtEpochMillis = null,
+                error = null,
+            )
         }
     }
 
@@ -135,6 +158,7 @@ class SyncViewModel @Inject constructor(
                         devices = result.devices,
                         lastUploaded = result.uploaded,
                         lastReceived = result.received,
+                        lastSuccessfulSyncAtEpochMillis = System.currentTimeMillis(),
                     )
                 }
                 is SynchronizeResult.Retrying -> mutableState.update { it.copy(isBusy = false, status = "Retrying", error = "Sync is temporarily unavailable.") }

@@ -21,6 +21,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject lateinit var focusState: ActivityFocusState
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private val imageViewModel: ImageCaptureViewModel by viewModels()
     private var pendingImageUpload = true
     private var openShared by mutableStateOf(true)
+    private var realtimeJob: Job? = null
     private val imagePicker = registerForActivityResult(PickMultipleVisualMedia(maxItems = 20)) { uris ->
         if (uris.isNotEmpty()) imageViewModel.capture(uris, pendingImageUpload)
     }
@@ -62,10 +67,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        realtime.start()
+        realtimeJob = lifecycleScope.launch {
+            syncViewModel.state.collect { state ->
+                if (state.configured) {
+                    realtime.start()
+                } else {
+                    realtime.stop()
+                }
+            }
+        }
     }
 
     override fun onStop() {
+        realtimeJob?.cancel()
         realtime.stop()
         super.onStop()
     }
