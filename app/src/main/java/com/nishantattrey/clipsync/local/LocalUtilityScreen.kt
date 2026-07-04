@@ -14,34 +14,44 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,12 +62,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nishantattrey.clipsync.R
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
 import com.nishantattrey.clipsync.core.local.model.LocalClipboardItem
 import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
@@ -81,7 +93,8 @@ fun LocalUtilityScreen(
     val imageState by imageViewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var section by remember { mutableStateOf(if (openShared) HistorySection.SHARED else HistorySection.LOCAL) }
-    var showComposer by remember { mutableStateOf(false) }
+    var showNewClip by remember { mutableStateOf(false) }
+    var searchExpanded by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     var pendingTextDelete by remember { mutableStateOf<String?>(null) }
     var pendingImageDelete by remember { mutableStateOf<LocalImageEntity?>(null) }
@@ -100,14 +113,58 @@ fun LocalUtilityScreen(
     }
 
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("ClipSync", fontWeight = FontWeight.SemiBold) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(if (syncState.configured) section.title else "ClipSync") },
+                actions = {
+                    if (syncState.configured) {
+                        IconButton(onClick = { searchExpanded = !searchExpanded }) {
+                            Icon(Icons.Default.Search, contentDescription = if (searchExpanded) "Close search" else "Search clips")
+                        }
+                    }
+                    IconButton(onClick = { showOptions = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Open settings")
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (syncState.configured && state.recovery == LocalRecoveryState.Ready) {
+                NavigationBar {
+                    HistorySection.entries.forEach { destination ->
+                        NavigationBarItem(
+                            selected = section == destination,
+                            onClick = { section = destination },
+                            icon = {
+                                Icon(
+                                    imageVector = when (destination) {
+                                        HistorySection.LOCAL -> Icons.Default.Home
+                                        HistorySection.SHARED -> Icons.Default.Share
+                                        HistorySection.BOOKMARKS -> Icons.Default.Favorite
+                                    },
+                                    contentDescription = null,
+                                )
+                            },
+                            label = { Text(destination.title) },
+                        )
+                    }
+                }
+            }
+        },
+        floatingActionButton = {
+            if (syncState.configured && state.recovery == LocalRecoveryState.Ready) {
+                FloatingActionButton(onClick = { showNewClip = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "New clip")
+                }
+            }
+        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SyncBar(syncState, syncViewModel::synchronize) { showOptions = true }
+            SyncBar(syncState, syncViewModel::synchronize)
 
             when (state.recovery) {
                 is LocalRecoveryState.TemporarilyUnavailable -> RecoveryPanel(
@@ -117,96 +174,99 @@ fun LocalUtilityScreen(
                     "Local encryption recovery is required.", "Reset encrypted history",
                 ) { confirmRecoveryReset = true }
                 LocalRecoveryState.Ready -> {
-                    SectionSelector(section) {
-                        section = it
-                        showComposer = false
-                    }
-
                     if (!syncState.configured) {
                         ConnectionSetup(syncState, syncViewModel)
-                    } else {
-                        if (section != HistorySection.BOOKMARKS) {
-                            CaptureActions(
-                                shared = section == HistorySection.SHARED,
-                                imageBusy = imageState.busy,
-                                onText = { showComposer = !showComposer },
-                                onImport = {
-                                    if (section == HistorySection.SHARED) {
-                                        viewModel.importFocusedClipboard { syncViewModel.synchronize() }
-                                    } else viewModel.importFocusedClipboard()
-                                },
-                                onImage = { pickImage(section == HistorySection.SHARED) },
+                    }
+
+                    if (syncState.configured) {
+                        if (searchExpanded) {
+                            OutlinedTextField(
+                                value = state.query,
+                                onValueChange = viewModel::setQuery,
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("Search clips") },
+                                singleLine = true,
                             )
                         }
-                        if (showComposer) {
-                            TextComposer(
-                                text = state.composerText,
-                                shared = section == HistorySection.SHARED,
-                                onText = viewModel::setComposerText,
-                                onDismiss = { showComposer = false },
-                                onSubmit = {
-                                    if (section == HistorySection.SHARED) {
-                                        viewModel.captureComposer { syncViewModel.synchronize() }
-                                    } else viewModel.captureComposer()
-                                    showComposer = false
-                                },
+
+                        val visibleText = state.items.filter { item -> section.includes(item) }
+                        val visibleImages = imageState.images.filter { image ->
+                            section.includes(image) && (
+                                state.query.isBlank() || image.displayName.orEmpty().contains(state.query, ignoreCase = true)
                             )
                         }
-                    }
 
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = viewModel::setQuery,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Search clips") },
-                        singleLine = true,
-                    )
-
-                    val visibleText = state.items.filter { item -> section.includes(item) }
-                    val visibleImages = imageState.images.filter { image ->
-                        section.includes(image) && (
-                            state.query.isBlank() || image.displayName.orEmpty().contains(state.query, ignoreCase = true)
+                        ClipHistory(
+                            modifier = Modifier.weight(1f),
+                            section = section,
+                            textItems = visibleText,
+                            images = visibleImages,
+                            previews = imageState.previews,
+                            loadingPreviews = imageState.loadingPreviews,
+                            deviceNameFor = { deviceId ->
+                                syncState.devices.firstOrNull { it.deviceId == deviceId }?.name
+                            },
+                            canLoadMore = state.canLoadMore,
+                            isLoadingMore = state.isLoadingMore,
+                            onLoadMore = viewModel::loadMore,
+                            onLoadPreview = imageViewModel::loadPreview,
+                            onViewImage = { image ->
+                                imageState.previews[image.itemId]?.let { viewedImage = (image.displayName ?: "Image") to it }
+                            },
+                            onCopyImage = imageViewModel::copy,
+                            onShareImage = imageViewModel::share,
+                            onUploadImage = imageViewModel::upload,
+                            onRetryImage = { syncViewModel.synchronize() },
+                            onBookmarkImage = imageViewModel::toggleBookmark,
+                            onDeleteImage = { pendingImageDelete = it },
+                            onCopyText = viewModel::copy,
+                            onUploadText = { viewModel.upload(it, syncViewModel::synchronize) },
+                            onBookmarkText = viewModel::toggleBookmark,
+                            onDeleteText = { pendingTextDelete = it.id },
                         )
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "${section.title} · ${visibleText.size + visibleImages.size}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-
-                    ClipHistory(
-                        modifier = Modifier.weight(1f),
-                        section = section,
-                        textItems = visibleText,
-                        images = visibleImages,
-                        previews = imageState.previews,
-                        loadingPreviews = imageState.loadingPreviews,
-                        deviceNameFor = { deviceId ->
-                            syncState.devices.firstOrNull { it.deviceId == deviceId }?.name
-                        },
-                        canLoadMore = state.canLoadMore,
-                        isLoadingMore = state.isLoadingMore,
-                        onLoadMore = viewModel::loadMore,
-                        onLoadPreview = imageViewModel::loadPreview,
-                        onViewImage = { image ->
-                            imageState.previews[image.itemId]?.let { viewedImage = (image.displayName ?: "Image") to it }
-                        },
-                        onCopyImage = imageViewModel::copy,
-                        onShareImage = imageViewModel::share,
-                        onUploadImage = imageViewModel::upload,
-                        onRetryImage = { syncViewModel.synchronize() },
-                        onBookmarkImage = imageViewModel::toggleBookmark,
-                        onDeleteImage = { pendingImageDelete = it },
-                        onCopyText = viewModel::copy,
-                        onUploadText = { viewModel.upload(it, syncViewModel::synchronize) },
-                        onBookmarkText = viewModel::toggleBookmark,
-                        onDeleteText = { pendingTextDelete = it.id },
-                    )
                 }
             }
         }
+    }
+
+    if (showNewClip) {
+        NewClipSheet(
+            text = state.composerText,
+            imageBusy = imageState.busy,
+            onTextChanged = viewModel::setComposerText,
+            onSaveText = {
+                viewModel.captureComposer()
+                showNewClip = false
+                section = HistorySection.LOCAL
+            },
+            onShareText = {
+                viewModel.captureComposer { syncViewModel.synchronize() }
+                showNewClip = false
+                section = HistorySection.SHARED
+            },
+            onImportLocal = {
+                viewModel.importFocusedClipboard()
+                showNewClip = false
+                section = HistorySection.LOCAL
+            },
+            onImportShared = {
+                viewModel.importFocusedClipboard { syncViewModel.synchronize() }
+                showNewClip = false
+                section = HistorySection.SHARED
+            },
+            onImageLocal = {
+                showNewClip = false
+                pickImage(false)
+                section = HistorySection.LOCAL
+            },
+            onImageShared = {
+                showNewClip = false
+                pickImage(true)
+                section = HistorySection.SHARED
+            },
+            onDismiss = { showNewClip = false },
+        )
     }
 
     if (showOptions) {
@@ -249,7 +309,7 @@ fun LocalUtilityScreen(
 }
 
 @Composable
-private fun SyncBar(state: SyncUiState, onSync: () -> Unit, onOptions: () -> Unit) {
+private fun SyncBar(state: SyncUiState, onSync: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -257,20 +317,17 @@ private fun SyncBar(state: SyncUiState, onSync: () -> Unit, onOptions: () -> Uni
         else MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(state.status, fontWeight = FontWeight.SemiBold)
-                Text(
-                    if (state.configured) "${state.deviceName} · ${state.devices.size} devices" else "Cloud is not configured",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                if (state.configured) "${state.status} · ${state.devices.size} devices" else "Cloud is not configured",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
             if (state.configured) {
                 TextButton(onClick = onSync, enabled = !state.isBusy) {
-                    Text(if (state.isBusy) "Refreshing" else "Refresh")
+                    Text(if (state.isBusy) "Refreshing" else "Sync now")
                 }
             }
-            TextButton(onClick = onOptions) { Text("Options") }
         }
     }
 }
@@ -291,55 +348,70 @@ private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SectionSelector(selected: HistorySection, onSelected: (HistorySection) -> Unit) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        HistorySection.entries.forEachIndexed { index, section ->
-            SegmentedButton(
-                selected = selected == section,
-                onClick = { onSelected(section) },
-                shape = SegmentedButtonDefaults.itemShape(index, HistorySection.entries.size),
-            ) { Text(section.title) }
-        }
-    }
-}
-
-@Composable
-private fun CaptureActions(
-    shared: Boolean,
-    imageBusy: Boolean,
-    onText: () -> Unit,
-    onImport: () -> Unit,
-    onImage: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilledTonalButton(onClick = onText, modifier = Modifier.weight(1f)) { Text("Text") }
-        FilledTonalButton(onClick = onImport, modifier = Modifier.weight(1f)) { Text("Import") }
-        FilledTonalButton(onClick = onImage, enabled = !imageBusy, modifier = Modifier.weight(1f)) {
-            Text(if (shared) "Image" else "Photo")
-        }
-    }
-}
-
-@Composable
-private fun TextComposer(
+private fun NewClipSheet(
     text: String,
-    shared: Boolean,
-    onText: (String) -> Unit,
+    imageBusy: Boolean,
+    onTextChanged: (String) -> Unit,
+    onSaveText: () -> Unit,
+    onShareText: () -> Unit,
+    onImportLocal: () -> Unit,
+    onImportShared: () -> Unit,
+    onImageLocal: () -> Unit,
+    onImageShared: () -> Unit,
     onDismiss: () -> Unit,
-    onSubmit: () -> Unit,
 ) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (shared) "Send text" else "Save text locally", fontWeight = FontWeight.SemiBold)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("New clip", style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
-                value = text, onValueChange = onText, modifier = Modifier.fillMaxWidth(),
+                value = text, onValueChange = onTextChanged, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Type or paste text") }, minLines = 3, maxLines = 6,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
-                Button(onClick = onSubmit, enabled = text.isNotEmpty()) { Text(if (shared) "Send" else "Save") }
-            }
+            DestinationActions(
+                localLabel = "Save locally",
+                sharedLabel = "Encrypt & share",
+                localEnabled = text.isNotEmpty(),
+                sharedEnabled = text.isNotEmpty(),
+                onLocal = onSaveText,
+                onShared = onShareText,
+            )
+            HorizontalDivider()
+            Text("Clipboard", style = MaterialTheme.typography.titleSmall)
+            DestinationActions("Import locally", "Import & share", onLocal = onImportLocal, onShared = onImportShared)
+            HorizontalDivider()
+            Text("Image", style = MaterialTheme.typography.titleSmall)
+            DestinationActions(
+                "Save image", "Share image",
+                localEnabled = !imageBusy,
+                sharedEnabled = !imageBusy,
+                onLocal = onImageLocal,
+                onShared = onImageShared,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DestinationActions(
+    localLabel: String,
+    sharedLabel: String,
+    localEnabled: Boolean = true,
+    sharedEnabled: Boolean = true,
+    onLocal: () -> Unit,
+    onShared: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = onLocal, enabled = localEnabled, modifier = Modifier.weight(1f)) {
+            Text(localLabel)
+        }
+        Button(onClick = onShared, enabled = sharedEnabled, modifier = Modifier.weight(1f)) {
+            Text(sharedLabel)
         }
     }
 }
@@ -369,33 +441,42 @@ private fun ClipHistory(
     onBookmarkText: (LocalClipboardItem) -> Unit,
     onDeleteText: (LocalClipboardItem) -> Unit,
 ) {
-    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(images, key = { "image-${it.itemId}" }) { image ->
-            ImageClip(
-                image = image,
-                preview = previews[image.itemId],
-                loading = image.itemId in loadingPreviews,
-                sourceLabel = imageSourceLabel(image, deviceNameFor),
-                loadPreview = { onLoadPreview(image) },
-                onView = { onViewImage(image) },
-                onCopy = { onCopyImage(image) },
-                onShare = { onShareImage(image) },
-                onUpload = if (image.cloudSyncState == "local") ({ onUploadImage(image) }) else null,
-                onRetry = if (image.cloudSyncState in setOf("queued", "retrying")) onRetryImage else null,
-                onBookmark = { onBookmarkImage(image) },
-                onDelete = { onDeleteImage(image) },
-            )
+    val entries = (images.map(HistoryEntry::Image) + textItems.map(HistoryEntry::Text))
+        .sortedByDescending(HistoryEntry::createdAtEpochMillis)
+    LazyColumn(modifier.fillMaxWidth()) {
+        items(entries, key = HistoryEntry::key) { entry ->
+            when (entry) {
+                is HistoryEntry.Image -> {
+                    val image = entry.value
+                    ImageClip(
+                        image = image,
+                        preview = previews[image.itemId],
+                        loading = image.itemId in loadingPreviews,
+                        sourceLabel = imageSourceLabel(image, deviceNameFor),
+                        loadPreview = { onLoadPreview(image) },
+                        onView = { onViewImage(image) },
+                        onCopy = { onCopyImage(image) },
+                        onShare = { onShareImage(image) },
+                        onUpload = if (image.cloudSyncState == "local") ({ onUploadImage(image) }) else null,
+                        onRetry = if (image.cloudSyncState in setOf("queued", "retrying")) onRetryImage else null,
+                        onBookmark = { onBookmarkImage(image) },
+                        onDelete = { onDeleteImage(image) },
+                    )
+                }
+                is HistoryEntry.Text -> {
+                    val item = entry.value
+                    TextClip(
+                        item = item,
+                        onCopy = { onCopyText(item) },
+                        onUpload = if (item.cloudSyncState == "local") ({ onUploadText(item) }) else null,
+                        onBookmark = { onBookmarkText(item) },
+                        onDelete = { onDeleteText(item) },
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
-        items(textItems, key = { "text-${it.id}" }) { item ->
-            TextClip(
-                item = item,
-                onCopy = { onCopyText(item) },
-                onUpload = if (item.cloudSyncState == "local") ({ onUploadText(item) }) else null,
-                onBookmark = { onBookmarkText(item) },
-                onDelete = { onDeleteText(item) },
-            )
-        }
-        if (images.isEmpty() && textItems.isEmpty()) {
+        if (entries.isEmpty()) {
             item {
                 Text(
                     when (section) {
@@ -435,40 +516,47 @@ private fun ImageClip(
 ) {
     var more by remember { mutableStateOf(false) }
     LaunchedEffect(image.itemId, image.encryptedFileName) { loadPreview() }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column {
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onView).padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             when {
                 preview != null -> Image(
                     bitmap = preview.asImageBitmap(),
                     contentDescription = image.displayName ?: "Image preview",
-                    modifier = Modifier.fillMaxWidth().height(210.dp).clickable(onClick = onView),
-                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(64.dp),
+                    contentScale = ContentScale.Crop,
                 )
-                loading -> Box(Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                    Text("Preview unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                loading -> Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+                else -> Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                    Text("Image", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(image.displayName ?: "Image", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${image.width} × ${image.height} · ${image.mimeType.substringAfter('/').uppercase()} · $sourceLabel",
+                    "${image.width} × ${image.height} · $sourceLabel",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onCopy) { Text("Copy") }
-                    TextButton(onClick = onShare) { Text("Share") }
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        TextButton(onClick = { more = true }) { Text("More") }
-                        DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                            onUpload?.let { DropdownMenuItem(text = { Text("Upload") }, onClick = { more = false; it() }) }
-                            onRetry?.let { DropdownMenuItem(text = { Text("Retry upload") }, onClick = { more = false; it() }) }
-                            DropdownMenuItem(text = { Text(if (image.isBookmarked) "Remove bookmark" else "Bookmark") }, onClick = { more = false; onBookmark() })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
-                        }
-                    }
+            }
+            IconButton(onClick = onCopy) {
+                Icon(painterResource(R.drawable.ic_copy), contentDescription = "Copy image")
+            }
+            Box {
+                IconButton(onClick = { more = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Image actions")
+                }
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                    DropdownMenuItem(text = { Text("Share to another app") }, onClick = { more = false; onShare() })
+                    onUpload?.let { DropdownMenuItem(text = { Text("Encrypt & share") }, onClick = { more = false; it() }) }
+                    onRetry?.let { DropdownMenuItem(text = { Text("Retry upload") }, onClick = { more = false; it() }) }
+                    DropdownMenuItem(text = { Text(if (image.isBookmarked) "Remove bookmark" else "Bookmark") }, onClick = { more = false; onBookmark() })
+                    DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
                 }
             }
         }
@@ -484,26 +572,45 @@ private fun TextClip(
     onDelete: () -> Unit,
 ) {
     var more by remember { mutableStateOf(false) }
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(textStateLabel(item), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text(relativeTime(item.createdAtEpochMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(item.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "${textStateLabel(item)} · ${relativeTime(item.createdAtEpochMillis)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(item.text, maxLines = 7, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onCopy) { Text("Copy") }
-                Spacer(Modifier.weight(1f))
-                Box {
-                    TextButton(onClick = { more = true }) { Text("More") }
-                    DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                        onUpload?.let { DropdownMenuItem(text = { Text("Upload") }, onClick = { more = false; it() }) }
-                        DropdownMenuItem(text = { Text(if (item.isBookmarked) "Remove bookmark" else "Bookmark") }, onClick = { more = false; onBookmark() })
-                        DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
-                    }
+            IconButton(onClick = onCopy) {
+                Icon(painterResource(R.drawable.ic_copy), contentDescription = "Copy text")
+            }
+            Box {
+                IconButton(onClick = { more = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Text actions")
+                }
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                    onUpload?.let { DropdownMenuItem(text = { Text("Encrypt & share") }, onClick = { more = false; it() }) }
+                    DropdownMenuItem(text = { Text(if (item.isBookmarked) "Remove bookmark" else "Bookmark") }, onClick = { more = false; onBookmark() })
+                    DropdownMenuItem(text = { Text("Delete") }, onClick = { more = false; onDelete() })
                 }
             }
         }
+    }
+}
+
+private sealed interface HistoryEntry {
+    val key: String
+    val createdAtEpochMillis: Long
+
+    data class Image(val value: LocalImageEntity) : HistoryEntry {
+        override val key = "image-${value.itemId}"
+        override val createdAtEpochMillis = value.createdAtEpochMillis
+    }
+
+    data class Text(val value: LocalClipboardItem) : HistoryEntry {
+        override val key = "text-${value.id}"
+        override val createdAtEpochMillis = value.createdAtEpochMillis
     }
 }
 
