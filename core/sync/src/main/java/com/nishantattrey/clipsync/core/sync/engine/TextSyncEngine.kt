@@ -23,6 +23,7 @@ import com.nishantattrey.clipsync.core.sync.image.ImageInboundHandler
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
 
 class TextSyncEngine(
@@ -213,6 +214,7 @@ class TextSyncEngine(
     }
 }
 
+@VisibleForTesting
 internal fun boundedRetryDelayMillis(exponent: Int): Long =
     (1_000L shl exponent.coerceIn(0, 8)).coerceAtMost(300_000L)
 

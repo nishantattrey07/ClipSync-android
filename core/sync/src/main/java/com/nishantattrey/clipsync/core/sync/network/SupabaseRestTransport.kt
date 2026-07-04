@@ -98,7 +98,7 @@ class SupabaseRestTransport(
             }
             if (response.status.value !in 200..299) throw HttpStatusException(response.status)
             val channel = response.bodyAsChannel()
-            val output = ByteArrayOutputStream()
+            val output = ZeroableByteArrayOutputStream()
             val buffer = ByteArray(32 * 1024)
             try {
                 var total = 0
@@ -110,7 +110,16 @@ class SupabaseRestTransport(
                     output.write(buffer, 0, count)
                 }
                 output.toByteArray()
-            } finally { buffer.fill(0) }
+            } finally {
+                buffer.fill(0)
+                output.zero()
+            }
+        }
+    }
+
+    private class ZeroableByteArrayOutputStream : java.io.ByteArrayOutputStream() {
+        fun zero() {
+            buf.fill(0)
         }
     }
 
