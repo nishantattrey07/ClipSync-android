@@ -20,11 +20,18 @@ enum class RetentionPeriod(val durationMillis: Long?) {
     THIRTY_DAYS(30L * 24 * 60 * 60 * 1_000),
 }
 
+enum class ShareAction {
+    ASK_EVERY_TIME,
+    SHARE_ONLINE,
+    SAVE_LOCAL
+}
+
 data class LocalSettings(
     val textRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
     val imageRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
     val markCopiedTextSensitive: Boolean = true,
     val deviceAliases: Map<String, String> = emptyMap(),
+    val defaultShareAction: ShareAction = ShareAction.ASK_EVERY_TIME,
 )
 
 sealed interface LocalRecoveryState {

@@ -5,9 +5,11 @@ import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.Serializer
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.proto.ClipboardSensitivityProto
 import com.nishantattrey.clipsync.core.local.proto.LocalSettingsProto
 import com.nishantattrey.clipsync.core.local.proto.RetentionPeriodProto
+import com.nishantattrey.clipsync.core.local.proto.ShareActionProto
 import com.nishantattrey.clipsync.core.local.proto.copy
 import java.io.InputStream
 import java.io.OutputStream
@@ -31,6 +33,7 @@ interface LocalSettingsRepository {
     suspend fun setImageRetentionPeriod(period: RetentionPeriod)
     suspend fun setDeviceAlias(deviceId: String, alias: String?)
     suspend fun setMarkCopiedTextSensitive(enabled: Boolean)
+    suspend fun setDefaultShareAction(action: ShareAction)
 }
 
 class ProtoLocalSettingsRepository(
@@ -68,12 +71,17 @@ class ProtoLocalSettingsRepository(
         }
     }
 
+    override suspend fun setDefaultShareAction(action: ShareAction) {
+        dataStore.updateData { current -> current.copy { defaultShareAction = action.toProto() } }
+    }
+
     private fun toModel(proto: LocalSettingsProto): LocalSettings = LocalSettings(
         textRetentionPeriod = proto.textRetention.toModel(),
         imageRetentionPeriod = proto.imageRetention.toModel(),
         deviceAliases = proto.deviceAliasesMap,
         markCopiedTextSensitive = proto.copyBackSensitivity !=
             ClipboardSensitivityProto.CLIPBOARD_SENSITIVITY_STANDARD,
+        defaultShareAction = proto.defaultShareAction.toModel(),
     )
 
     private fun RetentionPeriodProto.toModel(): RetentionPeriod = when (this) {
@@ -92,5 +100,17 @@ class ProtoLocalSettingsRepository(
         RetentionPeriod.ONE_DAY -> RetentionPeriodProto.RETENTION_PERIOD_ONE_DAY
         RetentionPeriod.SEVEN_DAYS -> RetentionPeriodProto.RETENTION_PERIOD_SEVEN_DAYS
         RetentionPeriod.THIRTY_DAYS -> RetentionPeriodProto.RETENTION_PERIOD_THIRTY_DAYS
+    }
+
+    private fun ShareActionProto.toModel(): ShareAction = when (this) {
+        ShareActionProto.SHARE_ACTION_SHARE_ONLINE -> ShareAction.SHARE_ONLINE
+        ShareActionProto.SHARE_ACTION_SAVE_LOCAL -> ShareAction.SAVE_LOCAL
+        else -> ShareAction.ASK_EVERY_TIME
+    }
+
+    private fun ShareAction.toProto(): ShareActionProto = when (this) {
+        ShareAction.ASK_EVERY_TIME -> ShareActionProto.SHARE_ACTION_ASK_EVERY_TIME
+        ShareAction.SHARE_ONLINE -> ShareActionProto.SHARE_ACTION_SHARE_ONLINE
+        ShareAction.SAVE_LOCAL -> ShareActionProto.SHARE_ACTION_SAVE_LOCAL
     }
 }

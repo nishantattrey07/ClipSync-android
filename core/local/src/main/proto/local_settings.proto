@@ -19,9 +19,17 @@ enum ClipboardSensitivityProto {
   CLIPBOARD_SENSITIVITY_STANDARD = 2;
 }
 
+enum ShareActionProto {
+  SHARE_ACTION_UNSPECIFIED = 0;
+  SHARE_ACTION_ASK_EVERY_TIME = 1;
+  SHARE_ACTION_SHARE_ONLINE = 2;
+  SHARE_ACTION_SAVE_LOCAL = 3;
+}
+
 message LocalSettingsProto {
   RetentionPeriodProto text_retention = 1;
   ClipboardSensitivityProto copy_back_sensitivity = 2;
   RetentionPeriodProto image_retention = 3;
   map<string, string> device_aliases = 4;
+  ShareActionProto default_share_action = 5;
 }

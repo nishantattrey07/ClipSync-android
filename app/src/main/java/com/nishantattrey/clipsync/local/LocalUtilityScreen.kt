@@ -85,6 +85,11 @@ import androidx.compose.ui.window.DialogProperties
 import com.nishantattrey.clipsync.core.local.model.ShareAction
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nishantattrey.clipsync.R
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
@@ -835,8 +840,17 @@ private fun OptionsSheet(
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val localAliases = remember(aliases) { mutableStateMapOf<String, String>().apply { putAll(aliases) } }
+    val onDismissWithSave = {
+        localAliases.forEach { (deviceId, alias) ->
+            if (aliases[deviceId] != alias) {
+                onAliasChanged(deviceId, alias.ifBlank { null })
+            }
+        }
+        onDismiss()
+    }
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onDismissWithSave,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -859,7 +873,7 @@ private fun OptionsSheet(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
-                        TextButton(onClick = onDismiss) { Text("Done") }
+                        TextButton(onClick = onDismissWithSave) { Text("Done") }
                     }
                 }
 
@@ -923,13 +937,27 @@ private fun OptionsSheet(
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                     Text("Device Aliases", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                                     otherDevices.forEach { device ->
+                                        val localValue = localAliases[device.deviceId].orEmpty()
                                         OutlinedTextField(
-                                            value = aliases[device.deviceId].orEmpty(),
-                                            onValueChange = { onAliasChanged(device.deviceId, it.ifBlank { null }) },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            label = { Text("Alias for ${device.name}") },
-                                            supportingText = { Text(device.platform) },
+                                            value = localValue,
+                                            onValueChange = { newValue ->
+                                                localAliases[device.deviceId] = newValue
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .onFocusChanged { focusState ->
+                                                    if (!focusState.isFocused) {
+                                                        onAliasChanged(device.deviceId, localAliases[device.deviceId]?.ifBlank { null })
+                                                    }
+                                                },
+                                            label = { Text("Alias for ${device.name} (${device.platform})") },
                                             singleLine = true,
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                            keyboardActions = KeyboardActions(
+                                                onDone = {
+                                                    onAliasChanged(device.deviceId, localAliases[device.deviceId]?.ifBlank { null })
+                                                }
+                                            )
                                         )
                                     }
                                 } else {
@@ -1165,7 +1193,7 @@ internal enum class HistorySection(val title: String) {
 
 private val RetentionPeriod.displayName: String
     get() = when (this) {
-        RetentionPeriod.NEVER -> "Never"
+        RetentionPeriod.NEVER -> "Always"
         RetentionPeriod.ONE_HOUR -> "1 hour"
         RetentionPeriod.SIX_HOURS -> "6 hours"
         RetentionPeriod.ONE_DAY -> "1 day"
