@@ -45,7 +45,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
@@ -69,6 +82,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.nishantattrey.clipsync.core.local.model.ShareAction
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.layout.width
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nishantattrey.clipsync.R
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
@@ -258,9 +274,11 @@ fun LocalUtilityScreen(
             sensitiveCopy = state.settings.markCopiedTextSensitive,
             textRetention = state.settings.textRetentionPeriod,
             imageRetention = state.settings.imageRetentionPeriod,
+            defaultShareAction = state.settings.defaultShareAction,
             onSensitiveCopy = viewModel::setSensitiveCopy,
             onTextRetention = viewModel::setTextRetention,
             onImageRetention = { period -> viewModel.setImageRetention(period); imageViewModel.applyRetention(period) },
+            onDefaultShareAction = viewModel::setDefaultShareAction,
             onRenameDevice = syncViewModel::saveDeviceName,
             onDeviceNameChanged = syncViewModel::updateDeviceName,
             aliases = state.settings.deviceAliases,
@@ -323,6 +341,119 @@ private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
     }
 }
 
+@Composable
+private fun DestinationToggle(
+    shared: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+            .padding(4.dp)
+    ) {
+        val targetBias = if (shared) 1f else -1f
+        val animatedBias by animateFloatAsState(targetBias, label = "toggleBias")
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .fillMaxHeight()
+                .align(BiasAlignment(animatedBias, 0f))
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                .shadow(elevation = 1.dp, shape = RoundedCornerShape(8.dp))
+        )
+
+        Row(Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onToggle(false) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Local Only",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (!shared) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (!shared) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onToggle(true) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Shared Cloud",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (shared) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (shared) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickImportCard(
+    onClick: () -> Unit,
+    iconResId: Int,
+    title: String,
+    subtitle: String,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = modifier.height(96.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                painter = painterResource(iconResId),
+                contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewClipSheet(
@@ -339,54 +470,119 @@ private fun NewClipSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var shareDestination by rememberSaveable { mutableStateOf(true) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Text("New clip", style = MaterialTheme.typography.titleLarge)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = !shareDestination,
-                    onClick = { shareDestination = false },
-                    label = { Text("Local") },
-                    leadingIcon = if (!shareDestination) {
-                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    } else null,
-                    modifier = Modifier.weight(1f),
-                )
-                FilterChip(
-                    selected = shareDestination,
-                    onClick = { shareDestination = true },
-                    label = { Text("Shared") },
-                    leadingIcon = if (shareDestination) {
-                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    } else null,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            OutlinedTextField(
-                value = text, onValueChange = onTextChanged, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Type or paste text") }, minLines = 3, maxLines = 6,
+            Text(
+                text = "New Clip",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            Button(
-                onClick = if (shareDestination) onShareText else onSaveText,
-                enabled = text.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
+
+            DestinationToggle(
+                shared = shareDestination,
+                onToggle = { shareDestination = it }
+            )
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(if (shareDestination) "Encrypt & share text" else "Save text locally")
-            }
-            Text("Add from", style = MaterialTheme.typography.titleSmall)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = if (shareDestination) onImportShared else onImportLocal,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Clipboard") }
-                OutlinedButton(
-                    onClick = if (shareDestination) onImageShared else onImageLocal,
+                QuickImportCard(
+                    onClick = {
+                        if (shareDestination) onImportShared() else onImportLocal()
+                    },
+                    iconResId = R.drawable.ic_clipboard,
+                    title = "From Clipboard",
+                    subtitle = "Paste copied text",
+                    modifier = Modifier.weight(1f)
+                )
+                QuickImportCard(
+                    onClick = {
+                        if (shareDestination) onImageShared() else onImageLocal()
+                    },
                     enabled = !imageBusy,
-                    modifier = Modifier.weight(1f),
-                ) { Text("Images") }
+                    iconResId = R.drawable.ic_image,
+                    title = "From Gallery",
+                    subtitle = "Select photos",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+                Text(
+                    text = "OR COMPOSE",
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
+                )
+                HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+            }
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChanged,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        "Type or paste text manually...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(16.dp),
+                trailingIcon = {
+                    if (text.isNotEmpty()) {
+                        IconButton(onClick = { onTextChanged("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear text")
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
+                )
+            )
+
+            Button(
+                onClick = {
+                    onDismiss()
+                    if (shareDestination) onShareText() else onSaveText()
+                },
+                enabled = text.isNotEmpty(),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                ),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text(
+                    text = if (shareDestination) "Encrypt & Share" else "Save Locally",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -626,9 +822,11 @@ private fun OptionsSheet(
     sensitiveCopy: Boolean,
     textRetention: RetentionPeriod,
     imageRetention: RetentionPeriod,
+    defaultShareAction: ShareAction,
     onSensitiveCopy: (Boolean) -> Unit,
     onTextRetention: (RetentionPeriod) -> Unit,
     onImageRetention: (RetentionPeriod) -> Unit,
+    onDefaultShareAction: (ShareAction) -> Unit,
     onRenameDevice: () -> Unit,
     onDeviceNameChanged: (String) -> Unit,
     aliases: Map<String, String>,
@@ -637,80 +835,269 @@ private fun OptionsSheet(
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item {
-                Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Settings", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = onDismiss) { Text("Done") }
-                }
-            }
-            item { Text("General", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-            item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Sensitive clipboard copy")
-                    Text("Hide previews from system clipboard UI", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(checked = sensitiveCopy, onCheckedChange = onSensitiveCopy)
-            }
-            }
-            item { HorizontalDivider() }
-            item { Text("Devices", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-            item {
-                OutlinedTextField(syncState.deviceName, onDeviceNameChanged, Modifier.fillMaxWidth(), label = { Text("This device's published name") }, singleLine = true)
-            }
-            item { Button(onClick = onRenameDevice, enabled = syncState.deviceName.isNotBlank()) { Text("Save device name") } }
-            if (syncState.devices.isEmpty()) item { Text("No other devices found", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            items(syncState.devices, key = { "device-${it.deviceId}" }) { device ->
-                OutlinedTextField(
-                    value = aliases[device.deviceId].orEmpty(),
-                    onValueChange = { onAliasChanged(device.deviceId, it.ifBlank { null }) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Alias for ${device.name}") },
-                    supportingText = { Text(device.platform) },
-                    singleLine = true,
-                )
-            }
-            item { HorizontalDivider() }
-            item { Text("Data on this phone", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
-            item { Text("Retention removes old unbookmarked local copies from this phone. It does not delete encrypted cloud items. Never keeps local copies until you delete them.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            item { RetentionChooser("Text retention", textRetention, onTextRetention) }
-            item { RetentionChooser("Image retention", imageRetention, onImageRetention) }
-            item { OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("Clear unbookmarked history on this phone") } }
-            if (syncState.configured) {
-                item { HorizontalDivider() }
-                item { Text("Connection", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Supabase URL", style = MaterialTheme.typography.titleSmall)
-                        Text(syncState.supabaseUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 18.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Settings",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        TextButton(onClick = onDismiss) { Text("Done") }
                     }
                 }
-                item { OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Disconnect from this channel") } }
+
+                // General Settings Card
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("General", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SettingsRow(
+                                    title = "Sensitive clipboard copy",
+                                    subtitle = "Hide previews from system clipboard UI"
+                                ) {
+                                    Switch(checked = sensitiveCopy, onCheckedChange = onSensitiveCopy)
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                SettingsDropDownItem(
+                                    title = "Default Share Action",
+                                    subtitle = "Action when sharing from other apps",
+                                    selectedText = defaultShareAction.displayName,
+                                    entries = ShareAction.entries.toList(),
+                                    entryLabel = { it.displayName },
+                                    onSelected = onDefaultShareAction
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Devices Card
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Devices", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedTextField(
+                                    value = syncState.deviceName,
+                                    onValueChange = onDeviceNameChanged,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("This device's published name") },
+                                    singleLine = true
+                                )
+                                Button(
+                                    onClick = onRenameDevice,
+                                    enabled = syncState.deviceName.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Save device name")
+                                }
+                                
+                                val otherDevices = syncState.devices.filter { it.deviceId != syncState.currentDeviceId }
+                                if (otherDevices.isNotEmpty()) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                    Text("Device Aliases", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                    otherDevices.forEach { device ->
+                                        OutlinedTextField(
+                                            value = aliases[device.deviceId].orEmpty(),
+                                            onValueChange = { onAliasChanged(device.deviceId, it.ifBlank { null }) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            label = { Text("Alias for ${device.name}") },
+                                            supportingText = { Text(device.platform) },
+                                            singleLine = true,
+                                        )
+                                    }
+                                } else {
+                                    Text("No other devices found", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Data on this phone Card
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Data on this phone", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(
+                                    text = "Retention removes old unbookmarked local copies from this phone. It does not delete encrypted cloud items.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                SettingsDropDownItem(
+                                    title = "Text retention",
+                                    selectedText = textRetention.displayName,
+                                    entries = RetentionPeriod.entries.toList(),
+                                    entryLabel = { it.displayName },
+                                    onSelected = onTextRetention
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                SettingsDropDownItem(
+                                    title = "Image retention",
+                                    selectedText = imageRetention.displayName,
+                                    entries = RetentionPeriod.entries.toList(),
+                                    entryLabel = { it.displayName },
+                                    onSelected = onImageRetention
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedButton(
+                                    onClick = onClear,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Clear unbookmarked history on this phone")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Connection Card
+                if (syncState.configured) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Connection", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text("Supabase URL", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                                        Text(syncState.supabaseUrl, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    OutlinedButton(
+                                        onClick = onDisconnect,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Text("Disconnect from this channel")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item { Spacer(Modifier.height(24.dp)) }
             }
-            item { Spacer(Modifier.height(24.dp)) }
-        }
         }
     }
 }
 
 @Composable
-private fun RetentionChooser(label: String, selected: RetentionPeriod, onSelected: (RetentionPeriod) -> Unit) {
+private fun SettingsRow(
+    title: String,
+    subtitle: String? = null,
+    action: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            if (subtitle != null) {
+                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        action()
+    }
+}
+
+@Composable
+private fun <T> SettingsDropDownItem(
+    title: String,
+    subtitle: String? = null,
+    selectedText: String,
+    entries: List<T>,
+    entryLabel: (T) -> String,
+    onSelected: (T) -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontWeight = FontWeight.Medium)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = true }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            if (subtitle != null) {
+                Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Box {
-            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selected.displayName) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = selectedText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                RetentionPeriod.entries.forEach { period ->
-                    DropdownMenuItem(text = { Text(period.displayName) }, onClick = { expanded = false; onSelected(period) })
+                entries.forEach { entry ->
+                    DropdownMenuItem(
+                        text = { Text(entryLabel(entry)) },
+                        onClick = {
+                            expanded = false
+                            onSelected(entry)
+                        }
+                    )
                 }
             }
         }
     }
 }
+
+private val ShareAction.displayName: String
+    get() = when (this) {
+        ShareAction.ASK_EVERY_TIME -> "Ask every time"
+        ShareAction.SHARE_ONLINE -> "Share online"
+        ShareAction.SAVE_LOCAL -> "Save locally"
+    }
 
 @Composable
 private fun ImageViewer(name: String, bitmap: Bitmap, onDismiss: () -> Unit) {

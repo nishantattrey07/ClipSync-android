@@ -8,6 +8,7 @@ import com.nishantattrey.clipsync.core.sync.engine.CloudSyncCoordinator
 import com.nishantattrey.clipsync.core.sync.engine.SynchronizeResult
 import com.nishantattrey.clipsync.core.sync.model.CloudConfigurationStore
 import com.nishantattrey.clipsync.core.sync.model.SyncedDevice
+import com.nishantattrey.clipsync.core.sync.model.DeviceIdentityStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ data class SyncUiState(
     val channelSecret: String = "",
     val deviceName: String = "Android",
     val devices: List<SyncedDevice> = emptyList(),
+    val currentDeviceId: String = "",
     val lastUploaded: Int = 0,
     val lastReceived: Int = 0,
     val lastSuccessfulSyncAtEpochMillis: Long? = null,
@@ -39,6 +41,7 @@ class SyncViewModel @Inject constructor(
     private val configurations: CloudConfigurationStore,
     private val keyDeriver: KeyDeriver,
     private val coordinator: CloudSyncCoordinator,
+    private val identityStore: DeviceIdentityStore,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SyncUiState())
     val state: StateFlow<SyncUiState> = mutableState.asStateFlow()
@@ -48,6 +51,7 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             val loaded = runCatching { configurations.load() }.getOrNull()
             val configured = loaded != null
+            val deviceId = runCatching { identityStore.loadOrCreate().deviceId }.getOrDefault("")
             val deviceName = loaded?.deviceName ?: state.value.deviceName
             val url = loaded?.endpoint?.supabaseUrl ?: ""
             loaded?.clearSensitive()
@@ -57,6 +61,7 @@ class SyncViewModel @Inject constructor(
                     status = if (configured) "Offline" else "Unconfigured",
                     deviceName = deviceName,
                     supabaseUrl = url,
+                    currentDeviceId = deviceId,
                 )
             }
             if (configured) synchronize()

@@ -10,6 +10,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalDataResult
 import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
@@ -142,5 +143,8 @@ private class ViewModelSettingsRepository : LocalSettingsRepository {
     }
     override suspend fun setMarkCopiedTextSensitive(enabled: Boolean) {
         mutableSettings.value = mutableSettings.value.copy(markCopiedTextSensitive = enabled)
+    }
+    override suspend fun setDefaultShareAction(action: ShareAction) {
+        mutableSettings.value = mutableSettings.value.copy(defaultShareAction = action)
     }
 }

@@ -13,6 +13,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.OversizedCaptureException
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
@@ -153,6 +154,10 @@ class LocalClipboardViewModel @Inject constructor(
 
     fun setDeviceAlias(deviceId: String, alias: String?) = viewModelScope.launch {
         settingsRepository.setDeviceAlias(deviceId, alias)
+    }
+
+    fun setDefaultShareAction(action: ShareAction) = viewModelScope.launch {
+        settingsRepository.setDefaultShareAction(action)
     }
 
     fun loadMore() {

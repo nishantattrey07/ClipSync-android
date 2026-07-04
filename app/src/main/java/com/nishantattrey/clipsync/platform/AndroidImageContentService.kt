@@ -50,9 +50,7 @@ class AndroidImageContentService @Inject constructor(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Image preview is unavailable." }
-        var sample = 1
-        while (bounds.outWidth / sample > 720 || bounds.outHeight / sample > 720) sample *= 2
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             ?: throw IllegalArgumentException("Image preview is unavailable.")
     }
 
