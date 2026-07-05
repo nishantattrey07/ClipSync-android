@@ -32,6 +32,8 @@ data class LocalSettings(
     val markCopiedTextSensitive: Boolean = true,
     val deviceAliases: Map<String, String> = emptyMap(),
     val defaultShareAction: ShareAction = ShareAction.ASK_EVERY_TIME,
+    val autoSync: Boolean = false,
+    val urlPreviewsEnabled: Boolean = true,
 )
 
 sealed interface LocalRecoveryState {

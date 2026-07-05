@@ -32,4 +32,6 @@ message LocalSettingsProto {
   RetentionPeriodProto image_retention = 3;
   map<string, string> device_aliases = 4;
   ShareActionProto default_share_action = 5;
+  bool auto_sync = 6;
+  optional bool url_previews_enabled = 7;
 }

@@ -34,6 +34,8 @@ interface LocalSettingsRepository {
     suspend fun setDeviceAlias(deviceId: String, alias: String?)
     suspend fun setMarkCopiedTextSensitive(enabled: Boolean)
     suspend fun setDefaultShareAction(action: ShareAction)
+    suspend fun setAutoSync(enabled: Boolean)
+    suspend fun setUrlPreviewsEnabled(enabled: Boolean)
 }
 
 class ProtoLocalSettingsRepository(
@@ -75,6 +77,14 @@ class ProtoLocalSettingsRepository(
         dataStore.updateData { current -> current.copy { defaultShareAction = action.toProto() } }
     }
 
+    override suspend fun setAutoSync(enabled: Boolean) {
+        dataStore.updateData { current -> current.copy { autoSync = enabled } }
+    }
+
+    override suspend fun setUrlPreviewsEnabled(enabled: Boolean) {
+        dataStore.updateData { current -> current.copy { urlPreviewsEnabled = enabled } }
+    }
+
     private fun toModel(proto: LocalSettingsProto): LocalSettings = LocalSettings(
         textRetentionPeriod = proto.textRetention.toModel(),
         imageRetentionPeriod = proto.imageRetention.toModel(),
@@ -82,6 +92,8 @@ class ProtoLocalSettingsRepository(
         markCopiedTextSensitive = proto.copyBackSensitivity !=
             ClipboardSensitivityProto.CLIPBOARD_SENSITIVITY_STANDARD,
         defaultShareAction = proto.defaultShareAction.toModel(),
+        autoSync = proto.autoSync,
+        urlPreviewsEnabled = if (proto.hasUrlPreviewsEnabled()) proto.urlPreviewsEnabled else true,
     )
 
     private fun RetentionPeriodProto.toModel(): RetentionPeriod = when (this) {
