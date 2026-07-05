@@ -36,17 +36,87 @@ const val MAX_SEARCH_SCAN = 1_000
 fun interface EpochMillisClock { fun now(): Long }
 fun interface LocalIdGenerator { fun next(): String }
 
+/**
+ * Repository interface managing local clipboard captures and history persistence.
+ * Abstracts Room database storage operations, payload encryption, and cryptographic fingerprint generation.
+ */
 interface LocalClipboardRepository {
+    /**
+     * Flow emitting updates when the database count changes.
+     */
     val changes: Flow<Int>
+
+    /**
+     * Encrypts and stores a new clipboard text capture.
+     * @param text The plaintext string to store.
+     * @param source The origin source of the capture.
+     * @return LocalDataResult containing the CaptureResult (Stored or Duplicate), or recovery state on failure.
+     */
     suspend fun capture(text: String, source: CaptureSource): LocalDataResult<CaptureResult>
+
+    /**
+     * Stores a clipboard item received from the cloud.
+     * @param id Unique identifier of the incoming item.
+     * @param text Plaintext of the incoming item.
+     * @param createdAtEpochMillis Capture timestamp.
+     * @return LocalDataResult containing a boolean indicating if the item was successfully stored.
+     */
     suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean>
+
+    /**
+     * Fetches a paginated slice of clipboard history items.
+     * @param bookmarksOnly Filter to fetch only bookmarked items.
+     * @param before Cursor element to fetch items preceding it.
+     * @param limit Maximum page size.
+     */
     suspend fun page(bookmarksOnly: Boolean, before: LocalClipboardItem? = null, limit: Int = MAX_PAGE_SIZE): LocalDataResult<List<LocalClipboardItem>>
+
+    /**
+     * Searches clipboard history items by matching query text.
+     * @param query The text sequence to match.
+     * @param bookmarksOnly Filter to search only bookmarked items.
+     */
     suspend fun search(query: String, bookmarksOnly: Boolean = false): LocalDataResult<List<LocalClipboardItem>>
+
+    /**
+     * Finds a single clipboard item by its unique ID.
+     * @param id Item identifier.
+     */
     suspend fun find(id: String): LocalDataResult<LocalClipboardItem?>
+
+    /**
+     * Sets or clears the bookmarked flag for a clipboard item.
+     * @param id Item identifier.
+     * @param bookmarked The target bookmark status.
+     * @return True if update succeeded, false otherwise.
+     */
     suspend fun setBookmarked(id: String, bookmarked: Boolean): Boolean
+
+    /**
+     * Schedules a clipboard item to be uploaded.
+     * @param id Item identifier.
+     * @return True if queued, false otherwise.
+     */
     suspend fun queueForUpload(id: String): Boolean = false
+
+    /**
+     * Deletes a clipboard item from the database.
+     * @param id Item identifier.
+     * @return True if deleted, false otherwise.
+     */
     suspend fun delete(id: String): Boolean
+
+    /**
+     * Clears all unbookmarked history entries.
+     * @return Number of deleted items.
+     */
     suspend fun clearUnbookmarked(): Int
+
+    /**
+     * Deletes unbookmarked history entries older than the specified retention window.
+     * @param period The retention period window to keep.
+     * @return Number of deleted items.
+     */
     suspend fun applyRetention(period: RetentionPeriod): Int
 }
 
@@ -245,8 +315,23 @@ class RoomLocalClipboardRepository(
     }
 }
 
+/**
+ * Manager interface handling local database recovery procedures.
+ * Determines keystore states and performs destructive resets to recover database accessibility on credential loss.
+ */
 interface LocalRecoveryManager {
+    /**
+     * Checks and returns the current state of local keys.
+     * @return Ready, MissingKeys, InvalidatedKeys, or TemporarilyUnavailable status.
+     */
     suspend fun state(): LocalRecoveryState
+
+    /**
+     * Resets the entire local encrypted database and clears associated keystores.
+     * Dangerous destructive action requiring confirmation, only usable when keys are missing or invalidated.
+     * @param confirmed Explicit true boolean to execute the command.
+     * @return The updated state of local key materials after resetting.
+     */
     suspend fun resetEncryptedHistory(confirmed: Boolean): LocalRecoveryState
 }
 

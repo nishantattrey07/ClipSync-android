@@ -15,7 +15,7 @@ class ActivityFocusState @Inject constructor() : ForegroundFocusState {
     @Volatile private var focused = false
     fun setResumed(value: Boolean) { resumed = value }
     fun setFocused(value: Boolean) { focused = value }
-    override fun isVisibleAndFocused(): Boolean = resumed && focused
+    override fun isVisibleAndFocused(): Boolean = resumed
 }
 
 class AndroidClipboardGateway @Inject constructor(

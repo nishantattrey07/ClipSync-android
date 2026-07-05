@@ -50,9 +50,7 @@ class AndroidImageContentService @Inject constructor(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Image preview is unavailable." }
-        var sample = 1
-        while (bounds.outWidth / sample > 720 || bounds.outHeight / sample > 720) sample *= 2
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             ?: throw IllegalArgumentException("Image preview is unavailable.")
     }
 
@@ -132,6 +130,14 @@ class AndroidImageContentService @Inject constructor(
         encryptionKey = encryptionKey.copyOf(),
         hmacKey = hmacKey.copyOf(),
     )
+
+    suspend fun clearCachedKeys() = channelKeyMutex.withLock {
+        cachedChannelKeys?.let { keys ->
+            keys.encryptionKey.fill(0)
+            keys.hmacKey.fill(0)
+        }
+        cachedChannelKeys = null
+    }
 
     private companion object {
         const val SHARE_FILE_LIFETIME_MILLIS = 10 * 60 * 1_000L

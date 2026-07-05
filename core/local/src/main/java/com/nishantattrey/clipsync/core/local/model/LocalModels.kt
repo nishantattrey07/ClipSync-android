@@ -20,9 +20,20 @@ enum class RetentionPeriod(val durationMillis: Long?) {
     THIRTY_DAYS(30L * 24 * 60 * 60 * 1_000),
 }
 
+enum class ShareAction {
+    ASK_EVERY_TIME,
+    SHARE_ONLINE,
+    SAVE_LOCAL
+}
+
 data class LocalSettings(
-    val retentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
+    val textRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
+    val imageRetentionPeriod: RetentionPeriod = RetentionPeriod.NEVER,
     val markCopiedTextSensitive: Boolean = true,
+    val deviceAliases: Map<String, String> = emptyMap(),
+    val defaultShareAction: ShareAction = ShareAction.ASK_EVERY_TIME,
+    val autoSync: Boolean = false,
+    val urlPreviewsEnabled: Boolean = true,
 )
 
 sealed interface LocalRecoveryState {
@@ -47,3 +58,5 @@ sealed interface LocalDataResult<out T> {
 
 class EmptyCaptureException : IllegalArgumentException("Captured text is empty.")
 class OversizedCaptureException : IllegalArgumentException("Captured text exceeds the local UTF-8 limit.")
+class AppNotFocusedException : IllegalStateException("App is not focused.")
+class EmptyClipboardException : IllegalStateException("Clipboard is empty or contains no text.")

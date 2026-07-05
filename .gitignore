@@ -33,6 +33,7 @@ secrets.properties
 
 # Private local agent and protocol compatibility material
 /AGENTS.md
+/audit.md
 /.agents/
 /skills-lock.json
 /.private/

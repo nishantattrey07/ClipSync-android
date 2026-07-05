@@ -20,7 +20,7 @@ class DeviceProfileCodecTest {
         val codec = DeviceProfileCodec(JcaAesGcm { ByteArray(it) { 8 } })
         val ciphertext = codec.encrypt(DeviceProfile("Private device", "Android", "1.0", 1), keys)
         val error = assertThrows(SecurityException::class.java) {
-            codec.decrypt(ciphertext, keys.copy(encryptionKey = ByteArray(32) { 7 }))
+            codec.decrypt(ciphertext, DerivedKeys(keys.channelId, ByteArray(32) { 7 }, keys.hmacKey))
         }
         require(!error.message.orEmpty().contains("Private device"))
     }

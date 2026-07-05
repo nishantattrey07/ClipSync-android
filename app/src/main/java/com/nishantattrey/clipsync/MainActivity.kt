@@ -7,7 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
 import com.nishantattrey.clipsync.local.LocalClipboardViewModel
 import com.nishantattrey.clipsync.local.LocalUtilityScreen
 import com.nishantattrey.clipsync.platform.ActivityFocusState
@@ -21,6 +21,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     @Inject lateinit var focusState: ActivityFocusState
@@ -30,8 +34,9 @@ class MainActivity : ComponentActivity() {
     private val imageViewModel: ImageCaptureViewModel by viewModels()
     private var pendingImageUpload = true
     private var openShared by mutableStateOf(true)
-    private val imagePicker = registerForActivityResult(PickVisualMedia()) { uri ->
-        uri?.let { imageViewModel.capture(it, pendingImageUpload) }
+    private var realtimeJob: Job? = null
+    private val imagePicker = registerForActivityResult(PickMultipleVisualMedia(maxItems = 20)) { uris ->
+        if (uris.isNotEmpty()) imageViewModel.capture(uris, pendingImageUpload)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +47,7 @@ class MainActivity : ComponentActivity() {
             ClipsyncTheme {
                 LocalUtilityScreen(viewModel, syncViewModel, imageViewModel, openShared) { upload ->
                     pendingImageUpload = upload
-                    imagePicker.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
+                    imagePicker.launch(PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
             }
         }
@@ -62,10 +67,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        realtime.start()
+        realtimeJob = lifecycleScope.launch {
+            syncViewModel.state.collect { state ->
+                if (state.configured) {
+                    realtime.start()
+                } else {
+                    realtime.stop()
+                }
+            }
+        }
     }
 
     override fun onStop() {
+        realtimeJob?.cancel()
         realtime.stop()
         super.onStop()
     }
@@ -78,6 +92,19 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         focusState.setFocused(hasFocus)
+        if (hasFocus) {
+            triggerAutoSync()
+        }
+    }
+
+    private fun triggerAutoSync() {
+        lifecycleScope.launch {
+            if (viewModel.state.value.settings.autoSync) {
+                viewModel.importFocusedClipboard {
+                    syncViewModel.synchronize()
+                }
+            }
+        }
     }
 
     companion object {

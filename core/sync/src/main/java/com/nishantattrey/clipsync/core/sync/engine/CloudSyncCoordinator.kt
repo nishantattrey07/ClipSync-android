@@ -1,9 +1,10 @@
 package com.nishantattrey.clipsync.core.sync.engine
 
 import com.nishantattrey.clipsync.core.local.model.LocalDataResult
-import com.nishantattrey.clipsync.core.local.persistence.ClipSyncDatabase
 import com.nishantattrey.clipsync.core.local.persistence.DeviceDirectoryEntity
+import com.nishantattrey.clipsync.core.local.persistence.LocalClipboardDao
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
+import com.nishantattrey.clipsync.core.local.persistence.SyncPersistenceDao
 import com.nishantattrey.clipsync.core.protocol.ProtocolV1
 import com.nishantattrey.clipsync.core.protocol.crypto.DerivedKeys
 import com.nishantattrey.clipsync.core.protocol.crypto.KeyDeriver
@@ -29,10 +30,11 @@ class CloudSyncCoordinator(
     private val transportFactory: ClipboardCloudTransportFactory,
     private val keyDeriver: KeyDeriver,
     private val profileCodec: DeviceProfileCodec,
-    private val database: ClipSyncDatabase,
+    private val localDao: LocalClipboardDao,
+    private val syncPersistenceDao: SyncPersistenceDao,
     private val local: LocalClipboardRepository,
-    private val engineFactory: (com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransport) -> TextSyncEngine,
-    private val imageEngineFactory: ((com.nishantattrey.clipsync.core.sync.model.ClipboardCloudTransport) -> ImageSyncEngine)? = null,
+    private val engineFactory: TextSyncEngineFactory,
+    private val imageEngineFactory: ImageSyncEngineFactory? = null,
     private val appVersion: String,
     private val cryptoDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
@@ -47,10 +49,10 @@ class CloudSyncCoordinator(
                 val transport = transportFactory.create(configuration.endpoint)
                 val registered = register(transport, session, keys, configuration.deviceName)
                 if (registered != null) return registered
-                val engine = engineFactory(transport)
+                val engine = engineFactory.create(transport)
                 prepareUnsynced(engine, session, keys)
                 val outbound = engine.drainOutbound(session)
-                val imageOutbound = imageEngineFactory?.invoke(transport)?.drain(session)
+                val imageOutbound = imageEngineFactory?.create(transport)?.drain(session)
                 val inbound = engine.catchUp(session, keys)
                 val directory = refreshDirectory(transport, session, keys)
                 when {
@@ -95,7 +97,7 @@ class CloudSyncCoordinator(
                         platform = profile.platform,
                     )
                 }
-            database.syncPersistenceDao().upsertDevices(devices.map { it.first })
+            syncPersistenceDao.upsertDevices(devices.map { it.first })
             DirectoryRefresh(devices.map { it.second })
         } catch (_: SecurityException) {
             DirectoryRefresh(failure = SyncFailure.InvalidRemoteData("A device profile could not be authenticated."))
@@ -129,7 +131,7 @@ class CloudSyncCoordinator(
     }
 
     private suspend fun prepareUnsynced(engine: TextSyncEngine, session: ChannelSession, keys: DerivedKeys) {
-        val dao = database.localClipboardDao()
+        val dao = localDao
         while (true) {
             val rows = dao.loadUnsynced(25)
             if (rows.isEmpty()) return

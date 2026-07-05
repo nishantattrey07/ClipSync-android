@@ -13,6 +13,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.OversizedCaptureException
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
@@ -50,13 +51,15 @@ class LocalClipboardViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LocalClipboardUiState())
     val state: StateFlow<LocalClipboardUiState> = mutableState.asStateFlow()
+    private val _urlPreviews = MutableStateFlow<Map<String, String>>(emptyMap())
+    val urlPreviews: StateFlow<Map<String, String>> = _urlPreviews.asStateFlow()
     private var refreshJob: Job? = null
 
     init {
         viewModelScope.launch {
             settingsRepository.settings.collectLatest { settings ->
                 mutableState.update { it.copy(settings = settings) }
-                repository.applyRetention(settings.retentionPeriod)
+                repository.applyRetention(settings.textRetentionPeriod)
             }
         }
         viewModelScope.launch {
@@ -88,13 +91,14 @@ class LocalClipboardViewModel @Inject constructor(
     fun importFocusedClipboard(onStored: ((String) -> Unit)? = null) = viewModelScope.launch {
         try {
             val result = importClipboard()
-            if (result == null) mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
-            else {
-                handle(result, "Imported")
-                captureId(result)?.let { id ->
-                    if (onStored != null && repository.queueForUpload(id)) onStored(id)
-                }
+            handle(result, "Imported")
+            captureId(result)?.let { id ->
+                if (onStored != null && repository.queueForUpload(id)) onStored(id)
             }
+        } catch (_: com.nishantattrey.clipsync.core.local.model.AppNotFocusedException) {
+            mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
+        } catch (_: com.nishantattrey.clipsync.core.local.model.EmptyClipboardException) {
+            mutableState.update { it.copy(message = "Clipboard is empty or contains no text") }
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Clipboard text is empty") }
         } catch (_: OversizedCaptureException) {
@@ -142,9 +146,37 @@ class LocalClipboardViewModel @Inject constructor(
         settingsRepository.setMarkCopiedTextSensitive(enabled)
     }
 
-    fun setRetention(period: RetentionPeriod) = viewModelScope.launch {
-        settingsRepository.setRetentionPeriod(period)
+    fun setTextRetention(period: RetentionPeriod) = viewModelScope.launch {
+        settingsRepository.setTextRetentionPeriod(period)
         repository.applyRetention(period)
+    }
+
+    fun setImageRetention(period: RetentionPeriod) = viewModelScope.launch {
+        settingsRepository.setImageRetentionPeriod(period)
+    }
+
+    fun setDeviceAlias(deviceId: String, alias: String?) = viewModelScope.launch {
+        settingsRepository.setDeviceAlias(deviceId, alias)
+    }
+
+    fun setDefaultShareAction(action: ShareAction) = viewModelScope.launch {
+        settingsRepository.setDefaultShareAction(action)
+    }
+
+    fun setAutoSync(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setAutoSync(enabled)
+    }
+
+    fun setUrlPreviewsEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setUrlPreviewsEnabled(enabled)
+    }
+
+    fun loadUrlPreview(url: String) {
+        if (_urlPreviews.value.containsKey(url)) return
+        viewModelScope.launch {
+            val title = UrlPreviewFetcher.fetchPreview(url)
+            _urlPreviews.update { it + (url to (title ?: "")) }
+        }
     }
 
     fun loadMore() {
@@ -202,7 +234,15 @@ class LocalClipboardViewModel @Inject constructor(
 
     private fun handle(result: LocalDataResult<*>, success: String) {
         when (result) {
-            is LocalDataResult.Success -> mutableState.update { it.copy(message = success) }
+            is LocalDataResult.Success -> {
+                val msg = when (result.value) {
+                    is com.nishantattrey.clipsync.core.local.model.CaptureResult.Duplicate -> {
+                        if (success == "Imported") "Already in history" else "Already saved"
+                    }
+                    else -> success
+                }
+                mutableState.update { it.copy(message = msg) }
+            }
             is LocalDataResult.RecoveryRequired -> mutableState.update { it.copy(recovery = result.state) }
             is LocalDataResult.CorruptItem -> mutableState.update { it.copy(message = "A local item is corrupt") }
         }
