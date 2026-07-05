@@ -67,10 +67,48 @@ class LocalClipboardViewModelTest {
         assertEquals(200, viewModel.state.value.items.size)
     }
 
+    @Test fun `captureComposer shows Saved for stored and Already saved for duplicate`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.setComposerText("hello")
+        repository.captureResult = CaptureResult.Stored("123")
+        viewModel.captureComposer()
+        advanceUntilIdle()
+        assertEquals("Saved", viewModel.state.value.message)
+
+        viewModel.setComposerText("hello")
+        repository.captureResult = CaptureResult.Duplicate("123")
+        viewModel.captureComposer()
+        advanceUntilIdle()
+        assertEquals("Already saved", viewModel.state.value.message)
+    }
+
+    @Test fun `importFocusedClipboard shows Imported for stored and Already in history for duplicate`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository)
+        advanceUntilIdle()
+
+        repository.clipboardText = "hello"
+        repository.captureResult = CaptureResult.Stored("123")
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Imported", viewModel.state.value.message)
+
+        repository.clipboardText = "hello"
+        repository.captureResult = CaptureResult.Duplicate("123")
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Already in history", viewModel.state.value.message)
+    }
+
     private fun viewModel(repository: ViewModelRepository): LocalClipboardViewModel {
         val clipboard = object : ClipboardGateway {
-            override fun readText(): String? = null
-            override fun writeText(text: String, sensitive: Boolean) = Unit
+            override fun readText(): String? = repository.clipboardText
+            override fun writeText(text: String, sensitive: Boolean) {
+                repository.clipboardText = text
+            }
         }
         return LocalClipboardViewModel(
             repository,
@@ -90,9 +128,11 @@ private class ViewModelRepository : LocalClipboardRepository {
     val changesSignal = MutableSharedFlow<Int>()
     override val changes: Flow<Int> = changesSignal
     private val history = (200 downTo 1).map { index -> item("item-$index", index.toLong()) }
+    var captureResult: CaptureResult = CaptureResult.Stored("captured")
+    var clipboardText: String? = null
 
     override suspend fun capture(text: String, source: CaptureSource): LocalDataResult<CaptureResult> =
-        LocalDataResult.Success(CaptureResult.Stored("captured"))
+        LocalDataResult.Success(captureResult)
     override suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean> =
         LocalDataResult.Success(true)
 

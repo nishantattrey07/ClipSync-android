@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -165,8 +167,10 @@ fun LocalUtilityScreen(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            val now = remember(syncState) { System.currentTimeMillis() }
+            val presentation = remember(syncState, now) { connectionPresentation(syncState, now) }
             ConnectionUtility(
-                presentation = connectionPresentation(syncState, System.currentTimeMillis()),
+                presentation = presentation,
                 syncing = syncState.isBusy,
                 onSync = syncViewModel::synchronize,
                 onSettings = { showOptions = true },
@@ -338,15 +342,15 @@ private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Connect to ClipSync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        OutlinedTextField(state.supabaseUrl, viewModel::updateUrl, Modifier.fillMaxWidth(), label = { Text("Supabase URL") }, singleLine = true)
-        OutlinedTextField(state.publishableKey, viewModel::updateKey, Modifier.fillMaxWidth(), label = { Text("Public anonymous key") }, singleLine = true)
+        Text(stringResource(R.string.connect_to_clipsync), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(state.supabaseUrl, viewModel::updateUrl, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.supabase_url)) }, singleLine = true)
+        OutlinedTextField(state.publishableKey, viewModel::updateKey, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.public_anon_key)) }, singleLine = true)
         OutlinedTextField(
             state.channelSecret, viewModel::updateSecret, Modifier.fillMaxWidth(),
-            label = { Text("Channel secret") }, visualTransformation = PasswordVisualTransformation(), singleLine = true,
+            label = { Text(stringResource(R.string.channel_secret)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true,
         )
-        OutlinedTextField(state.deviceName, viewModel::updateDeviceName, Modifier.fillMaxWidth(), label = { Text("Device name") }, singleLine = true)
-        Button(onClick = viewModel::saveConfiguration, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) { Text("Connect") }
+        OutlinedTextField(state.deviceName, viewModel::updateDeviceName, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.device_name)) }, singleLine = true)
+        Button(onClick = viewModel::saveConfiguration, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.connect)) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
@@ -388,7 +392,7 @@ private fun DestinationToggle(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Local Only",
+                    text = stringResource(R.string.local_only),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (!shared) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (!shared) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -405,7 +409,7 @@ private fun DestinationToggle(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Shared Cloud",
+                    text = stringResource(R.string.shared_cloud),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (shared) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (shared) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -452,13 +456,17 @@ private fun QuickImportCard(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -514,8 +522,8 @@ private fun NewClipSheet(
                         if (shareDestination) onImportShared() else onImportLocal()
                     },
                     iconResId = R.drawable.ic_clipboard,
-                    title = "From Clipboard",
-                    subtitle = "Paste copied text",
+                    title = stringResource(R.string.from_clipboard),
+                    subtitle = stringResource(R.string.paste_copied_text),
                     modifier = Modifier.weight(1f)
                 )
                 QuickImportCard(
@@ -524,8 +532,8 @@ private fun NewClipSheet(
                     },
                     enabled = !imageBusy,
                     iconResId = R.drawable.ic_image,
-                    title = "From Gallery",
-                    subtitle = "Select photos",
+                    title = stringResource(R.string.from_gallery),
+                    subtitle = stringResource(R.string.select_photos),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -536,7 +544,7 @@ private fun NewClipSheet(
             ) {
                 HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
                 Text(
-                    text = "OR COMPOSE",
+                    text = stringResource(R.string.or_compose),
                     modifier = Modifier.padding(horizontal = 12.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -551,7 +559,7 @@ private fun NewClipSheet(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
                     Text(
-                        "Type or paste text manually...",
+                        stringResource(R.string.type_paste_placeholder),
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 },
@@ -561,7 +569,7 @@ private fun NewClipSheet(
                 trailingIcon = {
                     if (text.isNotEmpty()) {
                         IconButton(onClick = { onTextChanged("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear text")
+                            Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear_text))
                         }
                     }
                 },
@@ -589,7 +597,7 @@ private fun NewClipSheet(
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 Text(
-                    text = if (shareDestination) "Encrypt & Share" else "Save Locally",
+                    text = if (shareDestination) stringResource(R.string.encrypt_and_share) else stringResource(R.string.save_locally),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -633,29 +641,40 @@ private fun ClipHistory(
             when (entry) {
                 is HistoryEntry.Image -> {
                     val image = entry.value
+                    val onLoad = remember(image) { { onLoadPreview(image) } }
+                    val onView = remember(image) { { onViewImage(image) } }
+                    val onCopy = remember(image) { { onCopyImage(image) } }
+                    val onShare = remember(image) { { onShareImage(image) } }
+                    val onUpload = remember(image) { if (image.cloudSyncState == "local") ({ onUploadImage(image) }) else null }
+                    val onBookmark = remember(image) { { onBookmarkImage(image) } }
+                    val onDelete = remember(image) { { onDeleteImage(image) } }
                     ImageClip(
                         image = image,
                         preview = previews[image.itemId],
                         loading = image.itemId in loadingPreviews,
                         sourceLabel = imageSourceLabel(image, deviceNameFor),
-                        loadPreview = { onLoadPreview(image) },
-                        onView = { onViewImage(image) },
-                        onCopy = { onCopyImage(image) },
-                        onShare = { onShareImage(image) },
-                        onUpload = if (image.cloudSyncState == "local") ({ onUploadImage(image) }) else null,
+                        loadPreview = onLoad,
+                        onView = onView,
+                        onCopy = onCopy,
+                        onShare = onShare,
+                        onUpload = onUpload,
                         onRetry = if (image.cloudSyncState in setOf("queued", "retrying")) onRetryImage else null,
-                        onBookmark = { onBookmarkImage(image) },
-                        onDelete = { onDeleteImage(image) },
+                        onBookmark = onBookmark,
+                        onDelete = onDelete,
                     )
                 }
                 is HistoryEntry.Text -> {
                     val item = entry.value
+                    val onCopy = remember(item) { { onCopyText(item) } }
+                    val onUpload = remember(item) { if (item.cloudSyncState in setOf("local", "failed")) ({ onUploadText(item) }) else null }
+                    val onBookmark = remember(item) { { onBookmarkText(item) } }
+                    val onDelete = remember(item) { { onDeleteText(item) } }
                     TextClip(
                         item = item,
-                        onCopy = { onCopyText(item) },
-                        onUpload = if (item.cloudSyncState in setOf("local", "failed")) ({ onUploadText(item) }) else null,
-                        onBookmark = { onBookmarkText(item) },
-                        onDelete = { onDeleteText(item) },
+                        onCopy = onCopy,
+                        onUpload = onUpload,
+                        onBookmark = onBookmark,
+                        onDelete = onDelete,
                     )
                 }
             }
@@ -863,7 +882,12 @@ private fun OptionsSheet(
         onDismissRequest = onDismissWithSave,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(
+            Modifier
+                .fillMaxSize()
+                .systemBarsPadding(),
+            color = MaterialTheme.colorScheme.background
+        ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -878,19 +902,19 @@ private fun OptionsSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Settings",
+                            text = stringResource(R.string.settings),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
-                        TextButton(onClick = onDismissWithSave) { Text("Done") }
+                        TextButton(onClick = onDismissWithSave) { Text(stringResource(R.string.done)) }
                     }
                 }
 
                 // General Settings Card
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("General", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.general), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
@@ -898,15 +922,15 @@ private fun OptionsSheet(
                         ) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 SettingsRow(
-                                    title = "Sensitive clipboard copy",
-                                    subtitle = "Hide previews from system clipboard UI"
+                                    title = stringResource(R.string.sensitive_copy),
+                                    subtitle = stringResource(R.string.sensitive_copy_sub)
                                 ) {
                                     Switch(checked = sensitiveCopy, onCheckedChange = onSensitiveCopy)
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 SettingsDropDownItem(
-                                    title = "Default Share Action",
-                                    subtitle = "Action when sharing from other apps",
+                                    title = stringResource(R.string.default_share_action),
+                                    subtitle = stringResource(R.string.default_share_action_sub),
                                     selectedText = defaultShareAction.displayName,
                                     entries = ShareAction.entries.toList(),
                                     entryLabel = { it.displayName },
@@ -920,7 +944,7 @@ private fun OptionsSheet(
                 // Devices Card
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Devices", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.devices), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
@@ -931,7 +955,7 @@ private fun OptionsSheet(
                                     value = syncState.deviceName,
                                     onValueChange = onDeviceNameChanged,
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("This device's published name") },
+                                    label = { Text(stringResource(R.string.this_device_published_name)) },
                                     singleLine = true
                                 )
                                 Button(
@@ -939,13 +963,13 @@ private fun OptionsSheet(
                                     enabled = syncState.deviceName.isNotBlank(),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Save device name")
+                                    Text(stringResource(R.string.save_device_name))
                                 }
                                 
                                 val otherDevices = syncState.devices.filter { it.deviceId != syncState.currentDeviceId }
                                 if (otherDevices.isNotEmpty()) {
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                                    Text("Device Aliases", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                    Text(stringResource(R.string.device_aliases), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                                     otherDevices.forEach { device ->
                                         val localValue = localAliases[device.deviceId].orEmpty()
                                         OutlinedTextField(
@@ -960,7 +984,7 @@ private fun OptionsSheet(
                                                         onAliasChanged(device.deviceId, localAliases[device.deviceId]?.ifBlank { null })
                                                     }
                                                 },
-                                            label = { Text("Alias for ${device.name} (${device.platform})") },
+                                            label = { Text(stringResource(R.string.device_alias_label, device.name, device.platform)) },
                                             singleLine = true,
                                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                                             keyboardActions = KeyboardActions(
@@ -971,7 +995,7 @@ private fun OptionsSheet(
                                         )
                                     }
                                 } else {
-                                    Text("No other devices found", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                                    Text(stringResource(R.string.no_other_devices), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }
@@ -981,7 +1005,7 @@ private fun OptionsSheet(
                 // Data on this phone Card
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Data on this phone", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.data_on_phone), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
@@ -989,13 +1013,13 @@ private fun OptionsSheet(
                         ) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
-                                    text = "Retention removes old unbookmarked local copies from this phone. It does not delete encrypted cloud items.",
+                                    text = stringResource(R.string.retention_warning),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 SettingsDropDownItem(
-                                    title = "Text retention",
+                                    title = stringResource(R.string.text_retention),
                                     selectedText = textRetention.displayName,
                                     entries = RetentionPeriod.entries.toList(),
                                     entryLabel = { it.displayName },
@@ -1003,7 +1027,7 @@ private fun OptionsSheet(
                                 )
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 SettingsDropDownItem(
-                                    title = "Image retention",
+                                    title = stringResource(R.string.image_retention),
                                     selectedText = imageRetention.displayName,
                                     entries = RetentionPeriod.entries.toList(),
                                     entryLabel = { it.displayName },
@@ -1014,7 +1038,7 @@ private fun OptionsSheet(
                                     onClick = onClear,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Clear unbookmarked history on this phone")
+                                    Text(stringResource(R.string.clear_history))
                                 }
                             }
                         }
@@ -1025,7 +1049,7 @@ private fun OptionsSheet(
                 if (syncState.configured) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Connection", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.connection), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
@@ -1033,7 +1057,7 @@ private fun OptionsSheet(
                             ) {
                                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text("Supabase URL", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                                        Text(stringResource(R.string.supabase_url), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                                         Text(syncState.supabaseUrl, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     OutlinedButton(
@@ -1041,7 +1065,7 @@ private fun OptionsSheet(
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                     ) {
-                                        Text("Disconnect from this channel")
+                                        Text(stringResource(R.string.disconnect_channel))
                                     }
                                 }
                             }
@@ -1139,8 +1163,9 @@ private val ShareAction.displayName: String
 
 @Composable
 private fun ImageViewer(name: String, bitmap: Bitmap, onDismiss: () -> Unit) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var scale by rememberSaveable { mutableStateOf(1f) }
+    var offsetX by rememberSaveable { mutableStateOf(0f) }
+    var offsetY by rememberSaveable { mutableStateOf(0f) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.scrim) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1151,11 +1176,17 @@ private fun ImageViewer(name: String, bitmap: Bitmap, onDismiss: () -> Unit) {
                 Image(
                     bitmap = bitmap.asImageBitmap(), contentDescription = name,
                     modifier = Modifier.fillMaxWidth().weight(1f)
-                        .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
+                        .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offsetX, translationY = offsetY)
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, zoom, _ ->
                                 scale = (scale * zoom).coerceIn(1f, 5f)
-                                offset = if (scale == 1f) Offset.Zero else offset + pan
+                                if (scale == 1f) {
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                } else {
+                                    offsetX += pan.x
+                                    offsetY += pan.y
+                                }
                             }
                         },
                     contentScale = ContentScale.Fit,

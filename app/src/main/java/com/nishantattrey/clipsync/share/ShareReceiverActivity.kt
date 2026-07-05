@@ -44,6 +44,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 @AndroidEntryPoint
 class ShareReceiverActivity : ComponentActivity() {
@@ -126,9 +128,11 @@ class ShareReceiverActivity : ComponentActivity() {
             busy = true
             error = null
             runCatching {
-                when (payload) {
-                    is SharedPayload.Images -> payload.uris.take(20).forEach { imageCapture.capture(it, upload) }
-                    is SharedPayload.Text -> saveText(payload.value, upload)
+                withContext(NonCancellable) {
+                    when (payload) {
+                        is SharedPayload.Images -> payload.uris.take(20).forEach { imageCapture.capture(it, upload) }
+                        is SharedPayload.Text -> saveText(payload.value, upload)
+                    }
                 }
             }.onSuccess {
                 startActivity(Intent(this@ShareReceiverActivity, MainActivity::class.java).apply {

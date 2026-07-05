@@ -215,7 +215,15 @@ class LocalClipboardViewModel @Inject constructor(
 
     private fun handle(result: LocalDataResult<*>, success: String) {
         when (result) {
-            is LocalDataResult.Success -> mutableState.update { it.copy(message = success) }
+            is LocalDataResult.Success -> {
+                val msg = when (result.value) {
+                    is com.nishantattrey.clipsync.core.local.model.CaptureResult.Duplicate -> {
+                        if (success == "Imported") "Already in history" else "Already saved"
+                    }
+                    else -> success
+                }
+                mutableState.update { it.copy(message = msg) }
+            }
             is LocalDataResult.RecoveryRequired -> mutableState.update { it.copy(recovery = result.state) }
             is LocalDataResult.CorruptItem -> mutableState.update { it.copy(message = "A local item is corrupt") }
         }
