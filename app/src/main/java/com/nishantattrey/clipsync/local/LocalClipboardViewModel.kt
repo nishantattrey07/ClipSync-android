@@ -175,9 +175,7 @@ class LocalClipboardViewModel @Inject constructor(
         if (_urlPreviews.value.containsKey(url)) return
         viewModelScope.launch {
             val title = UrlPreviewFetcher.fetchPreview(url)
-            if (title != null) {
-                _urlPreviews.update { it + (url to title) }
-            }
+            _urlPreviews.update { it + (url to (title ?: "")) }
         }
     }
 
