@@ -89,13 +89,14 @@ class LocalClipboardViewModel @Inject constructor(
     fun importFocusedClipboard(onStored: ((String) -> Unit)? = null) = viewModelScope.launch {
         try {
             val result = importClipboard()
-            if (result == null) mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
-            else {
-                handle(result, "Imported")
-                captureId(result)?.let { id ->
-                    if (onStored != null && repository.queueForUpload(id)) onStored(id)
-                }
+            handle(result, "Imported")
+            captureId(result)?.let { id ->
+                if (onStored != null && repository.queueForUpload(id)) onStored(id)
             }
+        } catch (_: com.nishantattrey.clipsync.core.local.model.AppNotFocusedException) {
+            mutableState.update { it.copy(message = "Clipboard import requires a focused app window") }
+        } catch (_: com.nishantattrey.clipsync.core.local.model.EmptyClipboardException) {
+            mutableState.update { it.copy(message = "Clipboard is empty or contains no text") }
         } catch (_: EmptyCaptureException) {
             mutableState.update { it.copy(message = "Clipboard text is empty") }
         } catch (_: OversizedCaptureException) {

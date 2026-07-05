@@ -1,6 +1,7 @@
 package com.nishantattrey.clipsync.local
 
 import com.nishantattrey.clipsync.core.local.capture.ClipboardGateway
+import com.nishantattrey.clipsync.core.local.capture.ForegroundFocusState
 import com.nishantattrey.clipsync.core.local.capture.FocusedClipboardImportUseCase
 import com.nishantattrey.clipsync.core.local.capture.TextCaptureUseCase
 import com.nishantattrey.clipsync.core.local.model.CaptureResult
@@ -103,7 +104,32 @@ class LocalClipboardViewModelTest {
         assertEquals("Already in history", viewModel.state.value.message)
     }
 
-    private fun viewModel(repository: ViewModelRepository): LocalClipboardViewModel {
+    @Test fun `importFocusedClipboard shows error when app not focused`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository, focusState = ForegroundFocusState { false })
+        advanceUntilIdle()
+
+        repository.clipboardText = "hello"
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Clipboard import requires a focused app window", viewModel.state.value.message)
+    }
+
+    @Test fun `importFocusedClipboard shows error when clipboard is empty`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository, focusState = ForegroundFocusState { true })
+        advanceUntilIdle()
+
+        repository.clipboardText = null
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Clipboard is empty or contains no text", viewModel.state.value.message)
+    }
+
+    private fun viewModel(
+        repository: ViewModelRepository,
+        focusState: ForegroundFocusState = ForegroundFocusState { true }
+    ): LocalClipboardViewModel {
         val clipboard = object : ClipboardGateway {
             override fun readText(): String? = repository.clipboardText
             override fun writeText(text: String, sensitive: Boolean) {
@@ -113,7 +139,7 @@ class LocalClipboardViewModelTest {
         return LocalClipboardViewModel(
             repository,
             TextCaptureUseCase(repository),
-            FocusedClipboardImportUseCase(clipboard, { true }, TextCaptureUseCase(repository)),
+            FocusedClipboardImportUseCase(clipboard, focusState, TextCaptureUseCase(repository)),
             clipboard,
             ViewModelSettingsRepository(),
             object : LocalRecoveryManager {
