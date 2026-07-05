@@ -1,6 +1,7 @@
 package com.nishantattrey.clipsync.local
 
 import com.nishantattrey.clipsync.core.local.capture.ClipboardGateway
+import com.nishantattrey.clipsync.core.local.capture.ForegroundFocusState
 import com.nishantattrey.clipsync.core.local.capture.FocusedClipboardImportUseCase
 import com.nishantattrey.clipsync.core.local.capture.TextCaptureUseCase
 import com.nishantattrey.clipsync.core.local.model.CaptureResult
@@ -10,6 +11,7 @@ import com.nishantattrey.clipsync.core.local.model.LocalDataResult
 import com.nishantattrey.clipsync.core.local.model.LocalRecoveryState
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.local.repository.LocalRecoveryManager
 import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
@@ -66,15 +68,78 @@ class LocalClipboardViewModelTest {
         assertEquals(200, viewModel.state.value.items.size)
     }
 
-    private fun viewModel(repository: ViewModelRepository): LocalClipboardViewModel {
+    @Test fun `captureComposer shows Saved for stored and Already saved for duplicate`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.setComposerText("hello")
+        repository.captureResult = CaptureResult.Stored("123")
+        viewModel.captureComposer()
+        advanceUntilIdle()
+        assertEquals("Saved", viewModel.state.value.message)
+
+        viewModel.setComposerText("hello")
+        repository.captureResult = CaptureResult.Duplicate("123")
+        viewModel.captureComposer()
+        advanceUntilIdle()
+        assertEquals("Already saved", viewModel.state.value.message)
+    }
+
+    @Test fun `importFocusedClipboard shows Imported for stored and Already in history for duplicate`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository)
+        advanceUntilIdle()
+
+        repository.clipboardText = "hello"
+        repository.captureResult = CaptureResult.Stored("123")
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Imported", viewModel.state.value.message)
+
+        repository.clipboardText = "hello"
+        repository.captureResult = CaptureResult.Duplicate("123")
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Already in history", viewModel.state.value.message)
+    }
+
+    @Test fun `importFocusedClipboard shows error when app not focused`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository, focusState = ForegroundFocusState { false })
+        advanceUntilIdle()
+
+        repository.clipboardText = "hello"
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Clipboard import requires a focused app window", viewModel.state.value.message)
+    }
+
+    @Test fun `importFocusedClipboard shows error when clipboard is empty`() = runTest(dispatcher) {
+        val repository = ViewModelRepository()
+        val viewModel = viewModel(repository, focusState = ForegroundFocusState { true })
+        advanceUntilIdle()
+
+        repository.clipboardText = null
+        viewModel.importFocusedClipboard()
+        advanceUntilIdle()
+        assertEquals("Clipboard is empty or contains no text", viewModel.state.value.message)
+    }
+
+    private fun viewModel(
+        repository: ViewModelRepository,
+        focusState: ForegroundFocusState = ForegroundFocusState { true }
+    ): LocalClipboardViewModel {
         val clipboard = object : ClipboardGateway {
-            override fun readText(): String? = null
-            override fun writeText(text: String, sensitive: Boolean) = Unit
+            override fun readText(): String? = repository.clipboardText
+            override fun writeText(text: String, sensitive: Boolean) {
+                repository.clipboardText = text
+            }
         }
         return LocalClipboardViewModel(
             repository,
             TextCaptureUseCase(repository),
-            FocusedClipboardImportUseCase(clipboard, { true }, TextCaptureUseCase(repository)),
+            FocusedClipboardImportUseCase(clipboard, focusState, TextCaptureUseCase(repository)),
             clipboard,
             ViewModelSettingsRepository(),
             object : LocalRecoveryManager {
@@ -89,9 +154,11 @@ private class ViewModelRepository : LocalClipboardRepository {
     val changesSignal = MutableSharedFlow<Int>()
     override val changes: Flow<Int> = changesSignal
     private val history = (200 downTo 1).map { index -> item("item-$index", index.toLong()) }
+    var captureResult: CaptureResult = CaptureResult.Stored("captured")
+    var clipboardText: String? = null
 
     override suspend fun capture(text: String, source: CaptureSource): LocalDataResult<CaptureResult> =
-        LocalDataResult.Success(CaptureResult.Stored("captured"))
+        LocalDataResult.Success(captureResult)
     override suspend fun storeInbound(id: String, text: String, createdAtEpochMillis: Long): LocalDataResult<Boolean> =
         LocalDataResult.Success(true)
 
@@ -127,10 +194,29 @@ private class ViewModelRepository : LocalClipboardRepository {
 private class ViewModelSettingsRepository : LocalSettingsRepository {
     private val mutableSettings = MutableStateFlow(LocalSettings())
     override val settings: Flow<LocalSettings> = mutableSettings
-    override suspend fun setRetentionPeriod(period: RetentionPeriod) {
-        mutableSettings.value = mutableSettings.value.copy(retentionPeriod = period)
+    override suspend fun setTextRetentionPeriod(period: RetentionPeriod) {
+        mutableSettings.value = mutableSettings.value.copy(textRetentionPeriod = period)
+    }
+    override suspend fun setImageRetentionPeriod(period: RetentionPeriod) {
+        mutableSettings.value = mutableSettings.value.copy(imageRetentionPeriod = period)
+    }
+    override suspend fun setDeviceAlias(deviceId: String, alias: String?) {
+        mutableSettings.value = mutableSettings.value.copy(
+            deviceAliases = mutableSettings.value.deviceAliases.toMutableMap().apply {
+                if (alias == null) remove(deviceId) else put(deviceId, alias)
+            },
+        )
     }
     override suspend fun setMarkCopiedTextSensitive(enabled: Boolean) {
         mutableSettings.value = mutableSettings.value.copy(markCopiedTextSensitive = enabled)
+    }
+    override suspend fun setDefaultShareAction(action: ShareAction) {
+        mutableSettings.value = mutableSettings.value.copy(defaultShareAction = action)
+    }
+    override suspend fun setAutoSync(enabled: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(autoSync = enabled)
+    }
+    override suspend fun setUrlPreviewsEnabled(enabled: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(urlPreviewsEnabled = enabled)
     }
 }

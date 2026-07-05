@@ -38,6 +38,5 @@ object LocalModule {
     @Provides fun capture(repository: LocalClipboardRepository) = TextCaptureUseCase(repository)
     @Provides fun importer(clipboard: ClipboardGateway, focus: ForegroundFocusState, capture: TextCaptureUseCase) =
         FocusedClipboardImportUseCase(clipboard, focus, capture)
-    @Provides fun recovery(store: LocalStore): LocalRecoveryCoordinator = store.recovery
-    @Provides fun recoveryManager(recovery: LocalRecoveryCoordinator): LocalRecoveryManager = recovery
+    @Provides fun recoveryManager(store: LocalStore): LocalRecoveryManager = store.recovery
 }

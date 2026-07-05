@@ -5,9 +5,11 @@ import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.Serializer
 import com.nishantattrey.clipsync.core.local.model.LocalSettings
 import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import com.nishantattrey.clipsync.core.local.proto.ClipboardSensitivityProto
 import com.nishantattrey.clipsync.core.local.proto.LocalSettingsProto
 import com.nishantattrey.clipsync.core.local.proto.RetentionPeriodProto
+import com.nishantattrey.clipsync.core.local.proto.ShareActionProto
 import com.nishantattrey.clipsync.core.local.proto.copy
 import java.io.InputStream
 import java.io.OutputStream
@@ -27,8 +29,13 @@ object LocalSettingsSerializer : Serializer<LocalSettingsProto> {
 
 interface LocalSettingsRepository {
     val settings: Flow<LocalSettings>
-    suspend fun setRetentionPeriod(period: RetentionPeriod)
+    suspend fun setTextRetentionPeriod(period: RetentionPeriod)
+    suspend fun setImageRetentionPeriod(period: RetentionPeriod)
+    suspend fun setDeviceAlias(deviceId: String, alias: String?)
     suspend fun setMarkCopiedTextSensitive(enabled: Boolean)
+    suspend fun setDefaultShareAction(action: ShareAction)
+    suspend fun setAutoSync(enabled: Boolean)
+    suspend fun setUrlPreviewsEnabled(enabled: Boolean)
 }
 
 class ProtoLocalSettingsRepository(
@@ -36,8 +43,22 @@ class ProtoLocalSettingsRepository(
 ) : LocalSettingsRepository {
     override val settings: Flow<LocalSettings> = dataStore.data.map(::toModel)
 
-    override suspend fun setRetentionPeriod(period: RetentionPeriod) {
+    override suspend fun setTextRetentionPeriod(period: RetentionPeriod) {
         dataStore.updateData { current -> current.copy { textRetention = period.toProto() } }
+    }
+
+    override suspend fun setImageRetentionPeriod(period: RetentionPeriod) {
+        dataStore.updateData { current -> current.copy { imageRetention = period.toProto() } }
+    }
+
+    override suspend fun setDeviceAlias(deviceId: String, alias: String?) {
+        dataStore.updateData { current ->
+            current.toBuilder().apply {
+                val normalized = alias?.trim().orEmpty()
+                if (normalized.isEmpty()) removeDeviceAliases(deviceId)
+                else putDeviceAliases(deviceId, normalized)
+            }.build()
+        }
     }
 
     override suspend fun setMarkCopiedTextSensitive(enabled: Boolean) {
@@ -52,18 +73,37 @@ class ProtoLocalSettingsRepository(
         }
     }
 
+    override suspend fun setDefaultShareAction(action: ShareAction) {
+        dataStore.updateData { current -> current.copy { defaultShareAction = action.toProto() } }
+    }
+
+    override suspend fun setAutoSync(enabled: Boolean) {
+        dataStore.updateData { current -> current.copy { autoSync = enabled } }
+    }
+
+    override suspend fun setUrlPreviewsEnabled(enabled: Boolean) {
+        dataStore.updateData { current -> current.copy { urlPreviewsEnabled = enabled } }
+    }
+
     private fun toModel(proto: LocalSettingsProto): LocalSettings = LocalSettings(
-        retentionPeriod = when (proto.textRetention) {
+        textRetentionPeriod = proto.textRetention.toModel(),
+        imageRetentionPeriod = proto.imageRetention.toModel(),
+        deviceAliases = proto.deviceAliasesMap,
+        markCopiedTextSensitive = proto.copyBackSensitivity !=
+            ClipboardSensitivityProto.CLIPBOARD_SENSITIVITY_STANDARD,
+        defaultShareAction = proto.defaultShareAction.toModel(),
+        autoSync = proto.autoSync,
+        urlPreviewsEnabled = if (proto.hasUrlPreviewsEnabled()) proto.urlPreviewsEnabled else true,
+    )
+
+    private fun RetentionPeriodProto.toModel(): RetentionPeriod = when (this) {
             RetentionPeriodProto.RETENTION_PERIOD_ONE_HOUR -> RetentionPeriod.ONE_HOUR
             RetentionPeriodProto.RETENTION_PERIOD_SIX_HOURS -> RetentionPeriod.SIX_HOURS
             RetentionPeriodProto.RETENTION_PERIOD_ONE_DAY -> RetentionPeriod.ONE_DAY
             RetentionPeriodProto.RETENTION_PERIOD_SEVEN_DAYS -> RetentionPeriod.SEVEN_DAYS
             RetentionPeriodProto.RETENTION_PERIOD_THIRTY_DAYS -> RetentionPeriod.THIRTY_DAYS
             else -> RetentionPeriod.NEVER
-        },
-        markCopiedTextSensitive = proto.copyBackSensitivity !=
-            ClipboardSensitivityProto.CLIPBOARD_SENSITIVITY_STANDARD,
-    )
+        }
 
     private fun RetentionPeriod.toProto(): RetentionPeriodProto = when (this) {
         RetentionPeriod.NEVER -> RetentionPeriodProto.RETENTION_PERIOD_NEVER
@@ -72,5 +112,17 @@ class ProtoLocalSettingsRepository(
         RetentionPeriod.ONE_DAY -> RetentionPeriodProto.RETENTION_PERIOD_ONE_DAY
         RetentionPeriod.SEVEN_DAYS -> RetentionPeriodProto.RETENTION_PERIOD_SEVEN_DAYS
         RetentionPeriod.THIRTY_DAYS -> RetentionPeriodProto.RETENTION_PERIOD_THIRTY_DAYS
+    }
+
+    private fun ShareActionProto.toModel(): ShareAction = when (this) {
+        ShareActionProto.SHARE_ACTION_SHARE_ONLINE -> ShareAction.SHARE_ONLINE
+        ShareActionProto.SHARE_ACTION_SAVE_LOCAL -> ShareAction.SAVE_LOCAL
+        else -> ShareAction.ASK_EVERY_TIME
+    }
+
+    private fun ShareAction.toProto(): ShareActionProto = when (this) {
+        ShareAction.ASK_EVERY_TIME -> ShareActionProto.SHARE_ACTION_ASK_EVERY_TIME
+        ShareAction.SHARE_ONLINE -> ShareActionProto.SHARE_ACTION_SHARE_ONLINE
+        ShareAction.SAVE_LOCAL -> ShareActionProto.SHARE_ACTION_SAVE_LOCAL
     }
 }

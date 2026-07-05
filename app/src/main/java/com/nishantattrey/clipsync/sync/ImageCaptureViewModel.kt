@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.nishantattrey.clipsync.core.local.model.RetentionPeriod
 
 data class ImageCaptureUiState(
     val busy: Boolean = false,
@@ -42,14 +43,24 @@ class ImageCaptureViewModel @Inject constructor(
         }
     }
 
-    fun capture(uri: Uri, upload: Boolean = true) = viewModelScope.launch {
+    fun capture(uri: Uri, upload: Boolean = true) = capture(listOf(uri), upload)
+
+    fun capture(uris: List<Uri>, upload: Boolean = true) = viewModelScope.launch {
         if (state.value.busy) return@launch
         mutableState.update { it.copy(busy = true, message = null) }
-        try {
-            mutableState.update { it.copy(busy = false, message = coordinator.capture(uri, upload)) }
-        } catch (_: Exception) {
-            mutableState.update { it.copy(busy = false, message = "Image is unavailable, unsupported, or not configured") }
+        var completed = 0
+        var failed = 0
+        uris.take(MAX_BATCH_IMAGES).forEach { uri ->
+            runCatching { coordinator.capture(uri, upload) }
+                .onSuccess { completed++ }
+                .onFailure { failed++ }
         }
+        val message = when {
+            failed == 0 -> if (completed == 1) "Image saved" else "$completed images saved"
+            completed == 0 -> "Images are unavailable, unsupported, or not configured"
+            else -> "$completed images saved; $failed could not be saved"
+        }
+        mutableState.update { it.copy(busy = false, message = message) }
     }
 
     fun dismissMessage() = mutableState.update { it.copy(message = null) }
@@ -103,4 +114,25 @@ class ImageCaptureViewModel @Inject constructor(
             files.delete(image.encryptedFileName)
         }
     }
+
+    fun clearUnbookmarked() = viewModelScope.launch {
+        val images = store.database.syncPersistenceDao().unbookmarkedDeletableImages()
+        images.forEach { deleteImageFilesAndRow(it) }
+        mutableState.update { it.copy(message = "Unbookmarked history cleared") }
+    }
+
+    fun applyRetention(period: RetentionPeriod) = viewModelScope.launch {
+        val duration = period.durationMillis ?: return@launch
+        val cutoff = System.currentTimeMillis() - duration
+        store.database.syncPersistenceDao().unbookmarkedDeletableImagesOlderThan(cutoff)
+            .forEach { deleteImageFilesAndRow(it) }
+    }
+
+    private suspend fun deleteImageFilesAndRow(image: LocalImageEntity) {
+        if (store.database.syncPersistenceDao().deleteLocalImage(image.itemId) == 1) {
+            files.delete(image.encryptedFileName)
+        }
+    }
+
+    private companion object { const val MAX_BATCH_IMAGES = 20 }
 }

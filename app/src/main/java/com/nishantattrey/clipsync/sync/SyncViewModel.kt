@@ -8,6 +8,7 @@ import com.nishantattrey.clipsync.core.sync.engine.CloudSyncCoordinator
 import com.nishantattrey.clipsync.core.sync.engine.SynchronizeResult
 import com.nishantattrey.clipsync.core.sync.model.CloudConfigurationStore
 import com.nishantattrey.clipsync.core.sync.model.SyncedDevice
+import com.nishantattrey.clipsync.core.sync.model.DeviceIdentityStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.nishantattrey.clipsync.platform.AndroidImageContentService
 
 data class SyncUiState(
     val configured: Boolean = false,
@@ -28,8 +30,10 @@ data class SyncUiState(
     val channelSecret: String = "",
     val deviceName: String = "Android",
     val devices: List<SyncedDevice> = emptyList(),
+    val currentDeviceId: String = "",
     val lastUploaded: Int = 0,
     val lastReceived: Int = 0,
+    val lastSuccessfulSyncAtEpochMillis: Long? = null,
     val error: String? = null,
 )
 
@@ -38,6 +42,8 @@ class SyncViewModel @Inject constructor(
     private val configurations: CloudConfigurationStore,
     private val keyDeriver: KeyDeriver,
     private val coordinator: CloudSyncCoordinator,
+    private val identityStore: DeviceIdentityStore,
+    private val imageContentService: AndroidImageContentService,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SyncUiState())
     val state: StateFlow<SyncUiState> = mutableState.asStateFlow()
@@ -47,16 +53,41 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             val loaded = runCatching { configurations.load() }.getOrNull()
             val configured = loaded != null
+            val deviceId = runCatching { identityStore.loadOrCreate().deviceId }.getOrDefault("")
             val deviceName = loaded?.deviceName ?: state.value.deviceName
+            val url = loaded?.endpoint?.supabaseUrl ?: ""
             loaded?.clearSensitive()
             mutableState.update {
                 it.copy(
                     configured = configured,
                     status = if (configured) "Offline" else "Unconfigured",
                     deviceName = deviceName,
+                    supabaseUrl = url,
+                    currentDeviceId = deviceId,
                 )
             }
             if (configured) synchronize()
+        }
+    }
+
+    fun disconnect() = viewModelScope.launch {
+        mutableState.update { it.copy(isBusy = true) }
+        imageContentService.clearCachedKeys()
+        configurations.clear()
+        mutableState.update {
+            it.copy(
+                configured = false,
+                status = "Unconfigured",
+                isBusy = false,
+                supabaseUrl = "",
+                publishableKey = "",
+                channelSecret = "",
+                devices = emptyList(),
+                lastUploaded = 0,
+                lastReceived = 0,
+                lastSuccessfulSyncAtEpochMillis = null,
+                error = null,
+            )
         }
     }
 
@@ -64,6 +95,27 @@ class SyncViewModel @Inject constructor(
     fun updateKey(value: String) = mutableState.update { it.copy(publishableKey = value) }
     fun updateSecret(value: String) = mutableState.update { it.copy(channelSecret = value) }
     fun updateDeviceName(value: String) = mutableState.update { it.copy(deviceName = value) }
+
+    fun saveDeviceName() = viewModelScope.launch {
+        val existing = configurations.load() ?: return@launch
+        try {
+            val renamed = validateConfiguration(
+                existing.endpoint.supabaseUrl,
+                existing.endpoint.publishableKey,
+                existing.channelId,
+                existing.channelPassword.concatToString(),
+                state.value.deviceName.trim(),
+            )
+            configurations.save(renamed)
+            renamed.clearSensitive()
+            mutableState.update { it.copy(deviceName = state.value.deviceName.trim(), error = null) }
+            synchronize()
+        } catch (_: IllegalArgumentException) {
+            mutableState.update { it.copy(error = "Device name must be valid and no longer than 80 characters.") }
+        } finally {
+            existing.clearSensitive()
+        }
+    }
 
     fun saveConfiguration() = viewModelScope.launch {
         val snapshot = state.value
@@ -114,6 +166,7 @@ class SyncViewModel @Inject constructor(
                         devices = result.devices,
                         lastUploaded = result.uploaded,
                         lastReceived = result.received,
+                        lastSuccessfulSyncAtEpochMillis = System.currentTimeMillis(),
                     )
                 }
                 is SynchronizeResult.Retrying -> mutableState.update { it.copy(isBusy = false, status = "Retrying", error = "Sync is temporarily unavailable.") }

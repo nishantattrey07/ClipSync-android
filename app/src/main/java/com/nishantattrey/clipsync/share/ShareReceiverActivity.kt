@@ -9,9 +9,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -36,9 +38,14 @@ import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 import com.nishantattrey.clipsync.core.sync.engine.CloudSyncCoordinator
 import com.nishantattrey.clipsync.sync.ImageCaptureCoordinator
 import com.nishantattrey.clipsync.ui.theme.ClipsyncTheme
+import com.nishantattrey.clipsync.core.local.settings.LocalSettingsRepository
+import com.nishantattrey.clipsync.core.local.model.ShareAction
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 @AndroidEntryPoint
 class ShareReceiverActivity : ComponentActivity() {
@@ -46,8 +53,11 @@ class ShareReceiverActivity : ComponentActivity() {
     @Inject lateinit var localRepository: LocalClipboardRepository
     @Inject lateinit var imageCapture: ImageCaptureCoordinator
     @Inject lateinit var cloudSync: CloudSyncCoordinator
+    @Inject lateinit var settingsRepository: LocalSettingsRepository
 
     private var busy by mutableStateOf(false)
+    private var checkingSettings by mutableStateOf(true)
+    private var showOptionsScreen by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,14 +70,54 @@ class ShareReceiverActivity : ComponentActivity() {
         }
         setContent {
             ClipsyncTheme {
-                ShareDestinationScreen(
-                    kind = if (payload is SharedPayload.Image) "image" else "text",
-                    busy = busy,
-                    error = error,
-                    onLocal = { save(payload, upload = false) },
-                    onShared = { save(payload, upload = true) },
-                    onCancel = ::finish,
-                )
+                if (showOptionsScreen) {
+                    ShareDestinationScreen(
+                        kind = when (payload) {
+                            is SharedPayload.Images -> if (payload.uris.size == 1) "image" else "${payload.uris.size} images"
+                            is SharedPayload.Text -> "text"
+                        },
+                        busy = busy,
+                        error = error,
+                        onLocal = { save(payload, upload = false) },
+                        onShared = { save(payload, upload = true) },
+                        onCancel = ::finish,
+                    )
+                } else {
+                    Surface(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier.padding(24.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (busy || checkingSettings) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = if (checkingSettings) "Checking settings..." else "Saving to ClipSync...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            error?.let {
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                                Spacer(modifier = Modifier.padding(vertical = 8.dp))
+                                OutlinedButton(onClick = ::finish) { Text("Close") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            val settings = settingsRepository.settings.first()
+            checkingSettings = false
+            when (settings.defaultShareAction) {
+                ShareAction.SHARE_ONLINE -> save(payload, upload = true)
+                ShareAction.SAVE_LOCAL -> save(payload, upload = false)
+                ShareAction.ASK_EVERY_TIME -> {
+                    showOptionsScreen = true
+                }
             }
         }
     }
@@ -78,9 +128,11 @@ class ShareReceiverActivity : ComponentActivity() {
             busy = true
             error = null
             runCatching {
-                when (payload) {
-                    is SharedPayload.Image -> imageCapture.capture(payload.uri, upload)
-                    is SharedPayload.Text -> saveText(payload.value, upload)
+                withContext(NonCancellable) {
+                    when (payload) {
+                        is SharedPayload.Images -> payload.uris.take(20).forEach { imageCapture.capture(it, upload) }
+                        is SharedPayload.Text -> saveText(payload.value, upload)
+                    }
                 }
             }.onSuccess {
                 startActivity(Intent(this@ShareReceiverActivity, MainActivity::class.java).apply {
@@ -90,7 +142,7 @@ class ShareReceiverActivity : ComponentActivity() {
                 finish()
             }.onFailure {
                 busy = false
-                error = if (payload is SharedPayload.Image) {
+                error = if (payload is SharedPayload.Images) {
                     "This image could not be decoded or saved."
                 } else {
                     "This text could not be saved."
@@ -112,15 +164,19 @@ class ShareReceiverActivity : ComponentActivity() {
 }
 
 private sealed interface SharedPayload {
-    data class Image(val uri: Uri) : SharedPayload
+    data class Images(val uris: List<Uri>) : SharedPayload
     data class Text(val value: String) : SharedPayload
 }
 
 @Suppress("DEPRECATION")
 private fun extractPayload(intent: Intent): SharedPayload? {
+    if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+        val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        return uris.takeIf { it.isNotEmpty() }?.let(SharedPayload::Images)
+    }
     if (intent.action != Intent.ACTION_SEND) return null
     val uri = intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
-    if (uri != null) return SharedPayload.Image(uri)
+    if (uri != null) return SharedPayload.Images(listOf(uri))
     val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
     return text?.let { SharedPayload.Text(it) }
 }
