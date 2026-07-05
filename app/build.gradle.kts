@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -23,10 +25,45 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val keystoreProperties = Properties()
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.inputStream().use { stream ->
+                    keystoreProperties.load(stream)
+                }
+            }
+
+            val keystorePath: String? = System.getenv("ANDROID_SIGNING_KEY_FILE")
+                ?: keystoreProperties.getProperty("storeFile")
+            val keystorePass: String? = System.getenv("ANDROID_SIGNING_STORE_PASSWORD")
+                ?: keystoreProperties.getProperty("storePassword")
+            val alias: String? = System.getenv("ANDROID_SIGNING_KEY_ALIAS")
+                ?: keystoreProperties.getProperty("keyAlias")
+            val aliasPass: String? = System.getenv("ANDROID_SIGNING_KEY_PASSWORD")
+                ?: keystoreProperties.getProperty("keyPassword")
+
+            val keystoreFile = keystorePath?.let { file(it) }
+            if (keystoreFile != null && keystoreFile.exists() && keystorePass != null && alias != null && aliasPass != null) {
+                storeFile = keystoreFile
+                storePassword = keystorePass
+                keyAlias = alias
+                keyPassword = aliasPass
+            } else {
+                storeFile = signingConfigs.getByName("debug").storeFile
+                storePassword = signingConfigs.getByName("debug").storePassword
+                keyAlias = signingConfigs.getByName("debug").keyAlias
+                keyPassword = signingConfigs.getByName("debug").keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles("proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
         create("privateProtocol") {
             initWith(getByName("release"))

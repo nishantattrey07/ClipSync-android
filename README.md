@@ -5,7 +5,7 @@ ClipSync is an experimental, open-source clipboard synchronization tool for pers
 ### Bidirectional Multi-Device Synchronization
 ClipSync supports seamless cross-platform clipboard sharing. Any number of devices sharing the same Supabase configuration and custom channel secret password will synchronize automatically in real-time. This includes:
 - **Android to Android**
-- **Android to macOS** (via the [macOS version of ClipSync](https://github.com/nishantattrey/ClipSync))
+- **Android to macOS** (via the [macOS version of ClipSync](https://github.com/nishantattrey07/ClipSync))
 - **macOS to Android**
 
 ClipSync is accountless and optimized for one person or a small trusted group using a dedicated Supabase project. It is not a hostile multi-tenant service: anyone who obtains the project's URL and publishable key can enumerate encrypted rows and metadata. Use a generated channel secret, keep project credentials private, and review the security boundaries below before deployment.
