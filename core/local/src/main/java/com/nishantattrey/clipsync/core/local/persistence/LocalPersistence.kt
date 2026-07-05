@@ -46,6 +46,13 @@ data class LocalClipboardEntity(
         cloudSyncState == other.cloudSyncState
 
     override fun hashCode(): Int = id.hashCode()
+
+    override fun toString(): String =
+        "LocalClipboardEntity(id=$id, encryptedPayload=[${encryptedPayload.size} bytes], " +
+            "fingerprint=[${fingerprint.size} bytes], envelopeVersion=$envelopeVersion, " +
+            "createdAtEpochMillis=$createdAtEpochMillis, captureSource=$captureSource, " +
+            "plaintextByteCount=$plaintextByteCount, isBookmarked=$isBookmarked, " +
+            "cloudSyncState=$cloudSyncState)"
 }
 
 @Dao
@@ -166,7 +173,23 @@ data class LocalImageEntity(
     @ColumnInfo(name = "is_bookmarked", defaultValue = "0") val isBookmarked: Boolean = false,
     @ColumnInfo(name = "fingerprint", typeAffinity = ColumnInfo.BLOB) val fingerprint: ByteArray,
     @ColumnInfo(name = "display_name") val displayName: String?,
-)
+) {
+    override fun equals(other: Any?): Boolean = other is LocalImageEntity &&
+        itemId == other.itemId && encryptedFileName == other.encryptedFileName &&
+        mimeType == other.mimeType && width == other.width && height == other.height &&
+        createdAtEpochMillis == other.createdAtEpochMillis && captureSource == other.captureSource &&
+        senderDeviceId == other.senderDeviceId && cloudSyncState == other.cloudSyncState &&
+        isBookmarked == other.isBookmarked && fingerprint.contentEquals(other.fingerprint) &&
+        displayName == other.displayName
+
+    override fun hashCode(): Int = itemId.hashCode()
+
+    override fun toString(): String =
+        "LocalImageEntity(itemId=$itemId, encryptedFileName=$encryptedFileName, mimeType=$mimeType, " +
+            "width=$width, height=$height, createdAtEpochMillis=$createdAtEpochMillis, " +
+            "captureSource=$captureSource, senderDeviceId=$senderDeviceId, cloudSyncState=$cloudSyncState, " +
+            "isBookmarked=$isBookmarked, fingerprint=[${fingerprint.size} bytes], displayName=$displayName)"
+}
 
 @Entity(
     tableName = "outbound_image_queue",

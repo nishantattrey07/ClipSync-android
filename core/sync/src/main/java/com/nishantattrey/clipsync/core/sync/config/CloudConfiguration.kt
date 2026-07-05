@@ -10,9 +10,29 @@ import kotlinx.serialization.json.Json
 
 private const val CONFIG_RECORD = "cloud_configuration"
 
+/**
+ * Storage interface representing a secure binary key-value blob store.
+ * Used for persisting encrypted sensitive configuration payloads (such as credentials) securely.
+ */
 interface SecureBlobStore {
+    /**
+     * Reads the binary payload associated with a key.
+     * @param name Key identifier.
+     * @return The stored byte array payload, or null if key does not exist.
+     */
     suspend fun read(name: String): ByteArray?
+
+    /**
+     * Writes or overwrites a binary payload associated with a key.
+     * @param name Key identifier.
+     * @param value Byte array payload to store.
+     */
     suspend fun write(name: String, value: ByteArray)
+
+    /**
+     * Deletes the key and its associated binary payload.
+     * @param name Key identifier.
+     */
     suspend fun delete(name: String)
 }
 
