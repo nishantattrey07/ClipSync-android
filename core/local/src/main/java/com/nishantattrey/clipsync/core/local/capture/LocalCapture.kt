@@ -3,6 +3,8 @@ package com.nishantattrey.clipsync.core.local.capture
 import com.nishantattrey.clipsync.core.local.model.CaptureResult
 import com.nishantattrey.clipsync.core.local.model.CaptureSource
 import com.nishantattrey.clipsync.core.local.model.LocalDataResult
+import com.nishantattrey.clipsync.core.local.model.AppNotFocusedException
+import com.nishantattrey.clipsync.core.local.model.EmptyClipboardException
 import com.nishantattrey.clipsync.core.local.repository.LocalClipboardRepository
 
 /**
@@ -36,9 +38,15 @@ class FocusedClipboardImportUseCase(
     private val focusState: ForegroundFocusState,
     private val capture: TextCaptureUseCase,
 ) {
-    suspend operator fun invoke(): LocalDataResult<CaptureResult>? {
-        if (!focusState.isVisibleAndFocused()) return null
-        val text = clipboard.readText() ?: return null
+    /**
+     * Imports the current plain text from the clipboard if the app is focused.
+     * @throws AppNotFocusedException If the app does not have a visible and focused window.
+     * @throws EmptyClipboardException If the clipboard is empty or does not contain plain text.
+     * @return LocalDataResult containing the CaptureResult.
+     */
+    suspend operator fun invoke(): LocalDataResult<CaptureResult> {
+        if (!focusState.isVisibleAndFocused()) throw AppNotFocusedException()
+        val text = clipboard.readText() ?: throw EmptyClipboardException()
         return capture(text, CaptureSource.FOCUSED_IMPORT)
     }
 }

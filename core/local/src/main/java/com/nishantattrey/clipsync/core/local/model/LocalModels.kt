@@ -56,3 +56,5 @@ sealed interface LocalDataResult<out T> {
 
 class EmptyCaptureException : IllegalArgumentException("Captured text is empty.")
 class OversizedCaptureException : IllegalArgumentException("Captured text exceeds the local UTF-8 limit.")
+class AppNotFocusedException : IllegalStateException("App is not focused.")
+class EmptyClipboardException : IllegalStateException("Clipboard is empty or contains no text.")

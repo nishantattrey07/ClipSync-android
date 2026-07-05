@@ -29,7 +29,13 @@ class LocalBoundaryTest {
         val clipboard = RecordingClipboard()
         val useCase = FocusedClipboardImportUseCase(clipboard, { false }, TextCaptureUseCase(NoOpRepository()))
 
-        assertNull(useCase())
+        var threw = false
+        try {
+            useCase()
+        } catch (_: com.nishantattrey.clipsync.core.local.model.AppNotFocusedException) {
+            threw = true
+        }
+        assertTrue(threw)
         assertFalse(clipboard.wasRead)
     }
 
