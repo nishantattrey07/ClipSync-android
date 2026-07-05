@@ -36,6 +36,10 @@
     <string name="settings">Settings</string>
     <string name="sensitive_copy">Sensitive clipboard copy</string>
     <string name="sensitive_copy_sub">Hide previews from system clipboard UI</string>
+    <string name="auto_sync_title">Auto-sync clipboard</string>
+    <string name="auto_sync_subtitle">Automatically import and share clipboard when app opens</string>
+    <string name="url_previews_title">Enable URL previews</string>
+    <string name="url_previews_subtitle">Fetch webpage titles for copied web links</string>
     <string name="default_share_action">Default Share Action</string>
     <string name="default_share_action_sub">Action when sharing from other apps</string>
     <string name="this_device_published_name">This device\'s published name</string>

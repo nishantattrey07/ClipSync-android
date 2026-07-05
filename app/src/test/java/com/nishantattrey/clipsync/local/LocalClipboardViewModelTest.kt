@@ -213,4 +213,10 @@ private class ViewModelSettingsRepository : LocalSettingsRepository {
     override suspend fun setDefaultShareAction(action: ShareAction) {
         mutableSettings.value = mutableSettings.value.copy(defaultShareAction = action)
     }
+    override suspend fun setAutoSync(enabled: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(autoSync = enabled)
+    }
+    override suspend fun setUrlPreviewsEnabled(enabled: Boolean) {
+        mutableSettings.value = mutableSettings.value.copy(urlPreviewsEnabled = enabled)
+    }
 }

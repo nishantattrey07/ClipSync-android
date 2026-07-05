@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -90,6 +91,9 @@ import com.nishantattrey.clipsync.core.local.model.ShareAction
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.ImeAction
@@ -120,6 +124,7 @@ fun LocalUtilityScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val syncState by syncViewModel.state.collectAsStateWithLifecycle()
     val imageState by imageViewModel.state.collectAsStateWithLifecycle()
+    val urlPreviews by viewModel.urlPreviews.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var section by rememberSaveable { mutableStateOf(if (openShared) HistorySection.SHARED else HistorySection.LOCAL) }
     var showNewClip by remember { mutableStateOf(false) }
@@ -218,6 +223,9 @@ fun LocalUtilityScreen(
                             },
                             canLoadMore = state.canLoadMore,
                             isLoadingMore = state.isLoadingMore,
+                            urlPreviews = urlPreviews,
+                            urlPreviewsEnabled = state.settings.urlPreviewsEnabled,
+                            onLoadUrlPreview = viewModel::loadUrlPreview,
                             onLoadMore = viewModel::loadMore,
                             onLoadPreview = imageViewModel::loadPreview,
                             onViewImage = { image ->
@@ -286,10 +294,14 @@ fun LocalUtilityScreen(
             textRetention = state.settings.textRetentionPeriod,
             imageRetention = state.settings.imageRetentionPeriod,
             defaultShareAction = state.settings.defaultShareAction,
+            autoSync = state.settings.autoSync,
+            urlPreviewsEnabled = state.settings.urlPreviewsEnabled,
             onSensitiveCopy = viewModel::setSensitiveCopy,
             onTextRetention = viewModel::setTextRetention,
             onImageRetention = { period -> viewModel.setImageRetention(period); imageViewModel.applyRetention(period) },
             onDefaultShareAction = viewModel::setDefaultShareAction,
+            onAutoSync = viewModel::setAutoSync,
+            onUrlPreviewsEnabled = viewModel::setUrlPreviewsEnabled,
             onRenameDevice = syncViewModel::saveDeviceName,
             onDeviceNameChanged = syncViewModel::updateDeviceName,
             aliases = state.settings.deviceAliases,
@@ -338,6 +350,42 @@ fun LocalUtilityScreen(
 
 @Composable
 private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
+    val context = LocalContext.current
+    val sqlText = remember {
+        runCatching {
+            context.assets.open("database_setup.sql").use { input ->
+                input.bufferedReader().use { it.readText() }
+            }
+        }.getOrDefault("")
+    }
+    var showSqlDialog by remember { mutableStateOf(false) }
+
+    if (showSqlDialog) {
+        AlertDialog(
+            onDismissRequest = { showSqlDialog = false },
+            title = { Text("Database Setup SQL") },
+            text = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = sqlText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSqlDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -352,6 +400,106 @@ private fun ConnectionSetup(state: SyncUiState, viewModel: SyncViewModel) {
         OutlinedTextField(state.deviceName, viewModel::updateDeviceName, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.device_name)) }, singleLine = true)
         Button(onClick = viewModel::saveConfiguration, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.connect)) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Help & Setup",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "Set up a dedicated Supabase project or revisit the connection requirements.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Setup",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        val steps = listOf(
+            "Create a Supabase project" to "Create a dedicated project and wait for database provisioning to finish.",
+            "Run the setup SQL" to "Quit older clients and run the bundled script in Supabase SQL Editor. The script resets incompatible cloud schemas.",
+            "Collect the project credentials" to "Copy the project URL and anon or publishable key from Supabase Project Settings.",
+            "Connect every trusted device" to "Enter the same generated E2E secret on each device that should share this clipboard."
+        )
+
+        steps.forEachIndexed { index, (title, desc) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(text = desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "Database Script",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "The bundled script is the canonical ClipSync database contract.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = {
+                    runCatching {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("database_setup.sql", sqlText)
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "SQL copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_copy),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("Copy Setup SQL")
+            }
+            OutlinedButton(
+                onClick = { showSqlDialog = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("View SQL")
+            }
+        }
     }
 }
 
@@ -618,6 +766,9 @@ private fun ClipHistory(
     deviceNameFor: (String) -> String?,
     canLoadMore: Boolean,
     isLoadingMore: Boolean,
+    urlPreviews: Map<String, String>,
+    urlPreviewsEnabled: Boolean,
+    onLoadUrlPreview: (String) -> Unit,
     onLoadMore: () -> Unit,
     onLoadPreview: (LocalImageEntity) -> Unit,
     onViewImage: (LocalImageEntity) -> Unit,
@@ -671,6 +822,9 @@ private fun ClipHistory(
                     val onDelete = remember(item) { { onDeleteText(item) } }
                     TextClip(
                         item = item,
+                        urlPreviews = urlPreviews,
+                        urlPreviewsEnabled = urlPreviewsEnabled,
+                        onLoadUrlPreview = onLoadUrlPreview,
                         onCopy = onCopy,
                         onUpload = onUpload,
                         onBookmark = onBookmark,
@@ -778,6 +932,9 @@ private fun ImageClip(
 @Composable
 private fun TextClip(
     item: LocalClipboardItem,
+    urlPreviews: Map<String, String>,
+    urlPreviewsEnabled: Boolean,
+    onLoadUrlPreview: (String) -> Unit,
     onCopy: () -> Unit,
     onUpload: (() -> Unit)?,
     onBookmark: () -> Unit,
@@ -788,6 +945,62 @@ private fun TextClip(
         Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(item.text, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                
+                val isUrl = remember(item.text) { UrlPreviewFetcher.isValidUrl(item.text) }
+                if (isUrl && urlPreviewsEnabled) {
+                    LaunchedEffect(item.text) {
+                        onLoadUrlPreview(item.text)
+                    }
+                    val previewTitle = urlPreviews[item.text.trim()]
+                    val uri = remember(item.text) { runCatching { android.net.Uri.parse(item.text.trim()) }.getOrNull() }
+                    val domain = uri?.host ?: ""
+                    val context = LocalContext.current
+
+                    Card(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_sync),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                Text(
+                                    text = previewTitle ?: item.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (domain.isNotEmpty()) {
+                                    Text(
+                                        text = domain,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Text(
                     "${textStateLabel(item)} · ${relativeTime(item.createdAtEpochMillis)}",
                     style = MaterialTheme.typography.labelSmall,
@@ -857,10 +1070,14 @@ private fun OptionsSheet(
     textRetention: RetentionPeriod,
     imageRetention: RetentionPeriod,
     defaultShareAction: ShareAction,
+    autoSync: Boolean,
+    urlPreviewsEnabled: Boolean,
     onSensitiveCopy: (Boolean) -> Unit,
     onTextRetention: (RetentionPeriod) -> Unit,
     onImageRetention: (RetentionPeriod) -> Unit,
     onDefaultShareAction: (ShareAction) -> Unit,
+    onAutoSync: (Boolean) -> Unit,
+    onUrlPreviewsEnabled: (Boolean) -> Unit,
     onRenameDevice: () -> Unit,
     onDeviceNameChanged: (String) -> Unit,
     aliases: Map<String, String>,
@@ -926,6 +1143,20 @@ private fun OptionsSheet(
                                     subtitle = stringResource(R.string.sensitive_copy_sub)
                                 ) {
                                     Switch(checked = sensitiveCopy, onCheckedChange = onSensitiveCopy)
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                SettingsRow(
+                                    title = stringResource(R.string.auto_sync_title),
+                                    subtitle = stringResource(R.string.auto_sync_subtitle)
+                                ) {
+                                    Switch(checked = autoSync, onCheckedChange = onAutoSync)
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                SettingsRow(
+                                    title = stringResource(R.string.url_previews_title),
+                                    subtitle = stringResource(R.string.url_previews_subtitle)
+                                ) {
+                                    Switch(checked = urlPreviewsEnabled, onCheckedChange = onUrlPreviewsEnabled)
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 SettingsDropDownItem(

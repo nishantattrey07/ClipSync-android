@@ -51,6 +51,8 @@ class LocalClipboardViewModel @Inject constructor(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LocalClipboardUiState())
     val state: StateFlow<LocalClipboardUiState> = mutableState.asStateFlow()
+    private val _urlPreviews = MutableStateFlow<Map<String, String>>(emptyMap())
+    val urlPreviews: StateFlow<Map<String, String>> = _urlPreviews.asStateFlow()
     private var refreshJob: Job? = null
 
     init {
@@ -159,6 +161,24 @@ class LocalClipboardViewModel @Inject constructor(
 
     fun setDefaultShareAction(action: ShareAction) = viewModelScope.launch {
         settingsRepository.setDefaultShareAction(action)
+    }
+
+    fun setAutoSync(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setAutoSync(enabled)
+    }
+
+    fun setUrlPreviewsEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setUrlPreviewsEnabled(enabled)
+    }
+
+    fun loadUrlPreview(url: String) {
+        if (_urlPreviews.value.containsKey(url)) return
+        viewModelScope.launch {
+            val title = UrlPreviewFetcher.fetchPreview(url)
+            if (title != null) {
+                _urlPreviews.update { it + (url to title) }
+            }
+        }
     }
 
     fun loadMore() {

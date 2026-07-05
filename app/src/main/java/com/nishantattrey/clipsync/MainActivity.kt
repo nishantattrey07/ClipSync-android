@@ -92,6 +92,19 @@ class MainActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         focusState.setFocused(hasFocus)
+        if (hasFocus) {
+            triggerAutoSync()
+        }
+    }
+
+    private fun triggerAutoSync() {
+        lifecycleScope.launch {
+            if (viewModel.state.value.settings.autoSync) {
+                viewModel.importFocusedClipboard {
+                    syncViewModel.synchronize()
+                }
+            }
+        }
     }
 
     companion object {
